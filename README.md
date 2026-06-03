@@ -73,7 +73,7 @@ StreetSpeak AI is not affiliated with Robinhood, Public, ElevenLabs, or any brok
 - Explicit opt-in will be required before any future live execution work.
 - Future live execution must require specific confirmation phrases, not generic responses like "yes" or "do it".
 
-## Development
+## Local Setup
 
 Install dependencies:
 
@@ -81,17 +81,41 @@ Install dependencies:
 pnpm install
 ```
 
-Run checks:
+Configure environment variables:
 
 ```sh
-pnpm build
-pnpm test
-pnpm lint
-pnpm typecheck
+cp .env.example .env.local
 ```
 
-Start the web app shell:
+StreetSpeak AI starts in mock mode and should not require real secrets for local development. Keep real credentials out of git. Add placeholder variable names to `.env.example` only when new environment variables are introduced.
+
+Run locally:
 
 ```sh
 pnpm --filter @streetspeak-ai/web dev
 ```
+
+Run tests and typechecks in a clean checkout after building workspace package outputs:
+
+```sh
+pnpm build
+pnpm typecheck
+pnpm test
+```
+
+Run lint:
+
+```sh
+pnpm lint
+```
+
+Useful project structure:
+
+- `apps/web` - Vite web app shell for the mock trading desk.
+- `packages/core` - command routing, quote/portfolio mocks, and desk orchestration.
+- `packages/orders` - order ticket types and validation.
+- `packages/safety` - safety review and confirmation contracts.
+- `packages/audit` - audit event types and redaction helpers.
+- `packages/brokers` - mock-only broker adapter interfaces.
+- `packages/voice` - voice transcript and provider interfaces.
+- `docs` - architecture, legal, security, and collaboration notes.
