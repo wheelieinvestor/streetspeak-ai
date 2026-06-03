@@ -1,0 +1,17 @@
+{
+  "name": "@streetspeak-ai/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run --passWithNoTests",
+    "lint": "eslint src --max-warnings=0",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@streetspeak-ai/core": "workspace:*"
+  },
+  "devDependencies": {}
+}
