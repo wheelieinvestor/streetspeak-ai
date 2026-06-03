@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createAuditEvent, redactAuditPayload } from "./index.js";
+import {
+  createAuditEvent,
+  InMemoryAuditSink,
+  redactAuditPayload
+} from "./index.js";
 
 describe("audit events", () => {
   it("creates timestamped audit events", () => {
@@ -91,5 +95,40 @@ describe("audit events", () => {
       token: "[REDACTED]",
       ticketId: "ticket-1"
     });
+  });
+
+  it("keeps local in-memory audit timelines append-only for the demo flow", async () => {
+    const sink = new InMemoryAuditSink();
+
+    await sink.append(
+      createAuditEvent(
+        "mock.execution.submitted",
+        {
+          ticketId: "ticket-1",
+          mockOrderId: "mock-order-1",
+          token: "do-not-store"
+        },
+        {
+          id: "audit-2",
+          actor: "mock_broker",
+          now: new Date("2026-01-01T00:00:00.000Z")
+        }
+      )
+    );
+
+    expect(sink.getEvents()).toEqual([
+      {
+        id: "audit-2",
+        type: "mock.execution.submitted",
+        occurredAt: "2026-01-01T00:00:00.000Z",
+        actor: "mock_broker",
+        redacted: true,
+        payload: {
+          ticketId: "ticket-1",
+          mockOrderId: "mock-order-1",
+          token: "[REDACTED]"
+        }
+      }
+    ]);
   });
 });
