@@ -95,19 +95,18 @@ Run locally:
 pnpm --filter @streetspeak-ai/web dev
 ```
 
-Run tests in a clean checkout after building workspace package outputs:
+Run tests and typechecks in a clean checkout after building workspace package outputs:
 
 ```sh
 pnpm build
+pnpm typecheck
 pnpm test
 ```
 
-Run lint, typecheck, and build:
+Run lint:
 
 ```sh
 pnpm lint
-pnpm typecheck
-pnpm build
 ```
 
 Useful project structure:
