@@ -50,6 +50,7 @@ describe("safety gates", () => {
   it("creates a time-bound confirmation challenge for a specific mock phrase", () => {
     const challenge = createConfirmationChallenge(ticket, {
       id: "challenge-1",
+      code: "4827",
       now: new Date("2026-01-01T00:00:00.000Z"),
       expiresAt: new Date("2026-01-01T00:05:00.000Z")
     });
@@ -57,16 +58,39 @@ describe("safety gates", () => {
     expect(challenge).toEqual({
       id: "challenge-1",
       ticketId: "ticket-1",
-      requiredPhrase: "CONFIRM MOCK BUY 1 AAPL MARKET",
+      code: "4827",
+      requiredPhrase: "CONFIRM MOCK BUY 1 AAPL MARKET CODE 4827",
       createdAt: "2026-01-01T00:00:00.000Z",
       expiresAt: "2026-01-01T00:05:00.000Z",
       status: "open"
     });
   });
 
-  it("accepts only the exact confirmation phrase for mock submission", () => {
+  it("accepts only the exact confirmation phrase with code for mock submission", () => {
     const challenge = createConfirmationChallenge(ticket, {
       id: "challenge-1",
+      code: "4827",
+      now: new Date("2026-01-01T00:00:00.000Z"),
+      expiresAt: new Date("2026-01-01T00:05:00.000Z")
+    });
+
+    expect(
+      evaluateConfirmationChallenge(
+        challenge,
+        "CONFIRM MOCK BUY 1 AAPL MARKET CODE 4827",
+        new Date("2026-01-01T00:01:00.000Z")
+      )
+    ).toEqual({
+      accepted: true,
+      status: "accepted_for_mock_only",
+      normalizedSpokenText: "confirm mock buy 1 aapl market code 4827"
+    });
+  });
+
+  it("rejects the exact mock phrase without the challenge code", () => {
+    const challenge = createConfirmationChallenge(ticket, {
+      id: "challenge-1",
+      code: "4827",
       now: new Date("2026-01-01T00:00:00.000Z"),
       expiresAt: new Date("2026-01-01T00:05:00.000Z")
     });
@@ -78,14 +102,16 @@ describe("safety gates", () => {
         new Date("2026-01-01T00:01:00.000Z")
       )
     ).toEqual({
-      accepted: true,
-      status: "accepted_for_mock_only",
+      accepted: false,
+      status: "rejected",
+      reason: "phrase_mismatch",
       normalizedSpokenText: "confirm mock buy 1 aapl market"
     });
   });
 
   it("reports generic confirmation rejection reasons", () => {
     const challenge = createConfirmationChallenge(ticket, {
+      code: "4827",
       expiresAt: new Date("2026-01-01T00:05:00.000Z")
     });
 
@@ -100,6 +126,28 @@ describe("safety gates", () => {
       status: "rejected",
       reason: "generic_confirmation",
       normalizedSpokenText: "confirmed"
+    });
+  });
+
+  it("rejects expired confirmation challenges before phrase matching", () => {
+    const challenge = createConfirmationChallenge(ticket, {
+      id: "challenge-1",
+      code: "4827",
+      now: new Date("2026-01-01T00:00:00.000Z"),
+      expiresAt: new Date("2026-01-01T00:05:00.000Z")
+    });
+
+    expect(
+      evaluateConfirmationChallenge(
+        challenge,
+        "CONFIRM MOCK BUY 1 AAPL MARKET CODE 4827",
+        new Date("2026-01-01T00:06:00.000Z")
+      )
+    ).toEqual({
+      accepted: false,
+      status: "rejected",
+      reason: "challenge_expired",
+      normalizedSpokenText: "confirm mock buy 1 aapl market code 4827"
     });
   });
 });

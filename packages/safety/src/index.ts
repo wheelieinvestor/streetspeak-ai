@@ -1,5 +1,5 @@
 import type { EquityOrderTicket } from "@streetspeak-ai/orders";
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 
 const GENERIC_CONFIRMATIONS = new Set([
   "yes",
@@ -32,6 +32,7 @@ export type ConfirmationChallengeStatus =
 export interface ConfirmationChallenge {
   readonly id: string;
   readonly ticketId: string;
+  readonly code: string;
   readonly requiredPhrase: string;
   readonly createdAt: string;
   readonly expiresAt: string;
@@ -59,6 +60,7 @@ export type ConfirmationEvaluation =
 
 export interface ConfirmationChallengeOptions {
   readonly id?: string;
+  readonly code?: string;
   readonly now?: Date;
   readonly expiresAt?: Date;
 }
@@ -98,10 +100,13 @@ export function createConfirmationChallenge(
   const expiresAt =
     options.expiresAt ?? new Date(now.getTime() + 5 * 60 * 1000);
 
+  const code = options.code ?? generateConfirmationCode();
+
   return {
     id: options.id ?? randomUUID(),
     ticketId: ticket.id,
-    requiredPhrase: buildConfirmationPhrase(ticket),
+    code,
+    requiredPhrase: `${buildConfirmationPhrase(ticket)} CODE ${code}`,
     createdAt: now.toISOString(),
     expiresAt: expiresAt.toISOString(),
     status: "open"
@@ -175,4 +180,8 @@ export function isSpecificConfirmation(
 
 function normalizeConfirmation(value: string): string {
   return value.trim().replace(/\s+/gu, " ").toLowerCase();
+}
+
+function generateConfirmationCode(): string {
+  return randomInt(0, 10_000).toString().padStart(4, "0");
 }

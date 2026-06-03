@@ -21,12 +21,27 @@ describe("audit events", () => {
     expect(event.payload).toEqual({ mode: "mock" });
   });
 
-  it("redacts secret-like audit payload keys recursively", () => {
+  it("redacts finance and security-sensitive audit payload keys recursively", () => {
     expect(
       redactAuditPayload({
-        brokerAccountId: "account-123",
+        accountId: "acct-id",
+        accountNumber: "acct-number",
+        brokerAccountId: "broker-account",
+        symbol: "HOOD",
+        side: "buy",
+        quantity: 5,
+        ticketId: "ticket-1",
+        mockOrderId: "mock-order-1",
         nested: {
-          apiKey: "secret-key",
+          accessToken: "access-token",
+          refreshToken: "refresh-token",
+          sessionToken: "session-token",
+          privateKey: "private-key",
+          apiKey: "api-key",
+          authorization: "Bearer token",
+          password: "password",
+          secret: "secret",
+          credential: "credential",
           safe: "visible"
         },
         events: [
@@ -37,9 +52,24 @@ describe("audit events", () => {
         ]
       })
     ).toEqual({
+      accountId: "[REDACTED]",
+      accountNumber: "[REDACTED]",
       brokerAccountId: "[REDACTED]",
+      symbol: "HOOD",
+      side: "buy",
+      quantity: 5,
+      ticketId: "ticket-1",
+      mockOrderId: "mock-order-1",
       nested: {
+        accessToken: "[REDACTED]",
+        refreshToken: "[REDACTED]",
+        sessionToken: "[REDACTED]",
+        privateKey: "[REDACTED]",
         apiKey: "[REDACTED]",
+        authorization: "[REDACTED]",
+        password: "[REDACTED]",
+        secret: "[REDACTED]",
+        credential: "[REDACTED]",
         safe: "visible"
       },
       events: [

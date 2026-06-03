@@ -33,7 +33,7 @@ export interface CreateAuditEventOptions {
 
 const REDACTED = "[REDACTED]";
 const REDACTED_KEY_PATTERN =
-  /token|secret|password|credential|authorization|api[_-]?key|broker[_-]?account/i;
+  /^(accountId|accountNumber|brokerAccountId|accessToken|refreshToken|sessionToken|privateKey|authorization|password|secret|credential|token|api[_-]?key)$/i;
 
 export function createAuditEvent(
   type: AuditEventType,
