@@ -10,6 +10,12 @@
       "default": "./dist/index.js"
     }
   },
+  "dependencies": {
+    "@streetspeak-ai/audit": "workspace:*",
+    "@streetspeak-ai/brokers": "workspace:*",
+    "@streetspeak-ai/orders": "workspace:*",
+    "@streetspeak-ai/safety": "workspace:*"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",

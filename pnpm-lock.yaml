@@ -46,7 +46,20 @@ importers:
         specifier: workspace:*
         version: link:../orders
 
-  packages/core: {}
+  packages/core:
+    dependencies:
+      "@streetspeak-ai/audit":
+        specifier: workspace:*
+        version: link:../audit
+      "@streetspeak-ai/brokers":
+        specifier: workspace:*
+        version: link:../brokers
+      "@streetspeak-ai/orders":
+        specifier: workspace:*
+        version: link:../orders
+      "@streetspeak-ai/safety":
+        specifier: workspace:*
+        version: link:../safety
 
   packages/orders: {}
 

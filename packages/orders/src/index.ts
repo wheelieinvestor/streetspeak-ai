@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 export type EquityOrderSide = "buy" | "sell";
 export type EquityOrderType = "market" | "limit";
 export type EquityTimeInForce = "day" | "gtc";
@@ -273,4 +271,16 @@ function isRecord(candidate: unknown): candidate is Record<string, unknown> {
     candidate !== null &&
     !Array.isArray(candidate)
   );
+}
+
+function randomUUID(): string {
+  const randomUUID = globalThis.crypto?.randomUUID;
+
+  if (typeof randomUUID === "function") {
+    return randomUUID.call(globalThis.crypto);
+  }
+
+  return `ticket-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
 }

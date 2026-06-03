@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 export type AuditEventType =
   | "command.received"
   | "command.routed"
@@ -8,7 +6,8 @@ export type AuditEventType =
   | "confirmation.challenge.created"
   | "confirmation.accepted"
   | "confirmation.rejected"
-  | "mock.execution.requested";
+  | "mock.execution.requested"
+  | "mock.execution.submitted";
 
 export type AuditEventActor = "user" | "system" | "mock_broker";
 
@@ -23,6 +22,22 @@ export interface AuditEvent {
 
 export interface AuditSink {
   append(event: AuditEvent): Promise<void>;
+}
+
+export class InMemoryAuditSink implements AuditSink {
+  readonly #events: AuditEvent[] = [];
+
+  async append(event: AuditEvent): Promise<void> {
+    this.#events.push(event);
+  }
+
+  getEvents(): readonly AuditEvent[] {
+    return [...this.#events];
+  }
+
+  clear(): void {
+    this.#events.length = 0;
+  }
 }
 
 export interface CreateAuditEventOptions {
@@ -44,7 +59,7 @@ export function createAuditEvent(
     options instanceof Date ? { now: options } : options;
 
   return {
-    id: normalizedOptions.id ?? randomUUID(),
+    id: normalizedOptions.id ?? createMockId("audit"),
     type,
     occurredAt: (normalizedOptions.now ?? new Date()).toISOString(),
     actor: normalizedOptions.actor ?? "system",
@@ -78,4 +93,16 @@ function redactValue(value: unknown): unknown {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function createMockId(prefix: string): string {
+  const randomUUID = globalThis.crypto?.randomUUID;
+
+  if (typeof randomUUID === "function") {
+    return randomUUID.call(globalThis.crypto);
+  }
+
+  return `${prefix}-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
 }

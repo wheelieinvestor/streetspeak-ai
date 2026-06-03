@@ -1,5 +1,4 @@
 import type { EquityOrderTicket } from "@streetspeak-ai/orders";
-import { randomInt, randomUUID } from "node:crypto";
 
 const GENERIC_CONFIRMATIONS = new Set([
   "yes",
@@ -103,7 +102,7 @@ export function createConfirmationChallenge(
   const code = options.code ?? generateConfirmationCode();
 
   return {
-    id: options.id ?? randomUUID(),
+    id: options.id ?? createMockId("challenge"),
     ticketId: ticket.id,
     code,
     requiredPhrase: `${buildConfirmationPhrase(ticket)} CODE ${code}`,
@@ -183,5 +182,19 @@ function normalizeConfirmation(value: string): string {
 }
 
 function generateConfirmationCode(): string {
-  return randomInt(0, 10_000).toString().padStart(4, "0");
+  return Math.floor(Math.random() * 10_000)
+    .toString()
+    .padStart(4, "0");
+}
+
+function createMockId(prefix: string): string {
+  const randomUUID = globalThis.crypto?.randomUUID;
+
+  if (typeof randomUUID === "function") {
+    return randomUUID.call(globalThis.crypto);
+  }
+
+  return `${prefix}-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
 }
