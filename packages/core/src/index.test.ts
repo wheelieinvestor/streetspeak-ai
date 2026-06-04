@@ -316,4 +316,39 @@ describe("core command routing", () => {
       "confirmation.rejected"
     ]);
   });
+
+  it("requires the full exact confirmation phrase and code before mock submission", async () => {
+    const state = await createMockTradingDeskTurn("buy 5 HOOD", {
+      commandId: "cmd-1",
+      ticketId: "ticket-1",
+      challengeId: "challenge-1",
+      challengeCode: "4827",
+      now: new Date("2026-01-01T00:00:00.000Z")
+    });
+    const rejected = await submitMockTradingDeskConfirmation(
+      state,
+      "CONFIRM MOCK BUY 5 HOOD MARKET",
+      {
+        now: new Date("2026-01-01T00:01:00.000Z")
+      }
+    );
+
+    expect(rejected.status).toBe("confirmation_rejected");
+    expect(rejected.confirmation).toMatchObject({
+      accepted: false,
+      status: "rejected",
+      reason: "phrase_mismatch",
+      normalizedSpokenText: "confirm mock buy 5 hood market"
+    });
+    expect(rejected.brokerResponse).toBeUndefined();
+    expect(rejected.session.liveTradingEnabled).toBe(false);
+    expect(rejected.auditTimeline.map((event) => event.type)).toEqual([
+      "command.received",
+      "command.routed",
+      "order.ticket.created",
+      "safety.reviewed",
+      "confirmation.challenge.created",
+      "confirmation.rejected"
+    ]);
+  });
 });

@@ -27,7 +27,8 @@ StreetSpeak AI v0.1 is a local mock trading desk demo. It can:
 - Reject generic confirmations like `yes`, `do it`, or `confirmed`.
 - Persist redacted local audit events for command, routing, ticket, safety, confirmation, and mock execution events.
 - Export local-only audit JSON and mock receipt Markdown/JSON.
-- Expose disabled-by-default Robinhood read-only adapter contracts backed only by static fixtures in `packages/brokers`; these are not wired into the demo as a live broker connection.
+- Show a separate `Robinhood Read-Only Fixture Explorer` panel backed only by static fixtures from `packages/brokers`.
+- Expose disabled-by-default Robinhood read-only adapter contracts; the fixture explorer is not a live broker connection.
 
 Mock mode is the default first experience. Live execution is unavailable and must remain disabled by default in future phases.
 
@@ -59,7 +60,9 @@ Open the local Vite URL and try commands such as:
 
 For order commands, copy the exact confirmation phrase/code shown by the app. A phrase without the code, an expired challenge, or generic text will not submit even the mock order.
 
-See [docs/demo-script.md](docs/demo-script.md) for a 2-minute reviewer walkthrough.
+After the mock desk, the app shows a `v0.1 Mock Demo` status panel and the `Robinhood Read-Only Fixture Explorer`. The Robinhood panel displays static account summary, buying power, portfolio, positions, quote lookup, order history, tradability, and symbol search fixtures. Every value is fixture-only: it is not real Robinhood account data, broker data, or market data, and it has no MCP transport, broker login, credential form, order review, order placement, or cancel-order behavior.
+
+See [docs/demo-script.md](docs/demo-script.md) and [docs/v0.1-demo-checklist.md](docs/v0.1-demo-checklist.md) for reviewer walkthroughs.
 
 ## Browser Voice Input
 
@@ -122,6 +125,8 @@ StreetSpeak AI v0.1 does not support notional/dollar-based final tickets. A comm
 
 Robinhood Agentic Trading through MCP is planned for a future phase. The current repository only has a disabled-by-default, fixture-only Robinhood read-only adapter scaffold in `packages/brokers`.
 
+The v0.1 web app includes a read-only fixture explorer so reviewers can inspect the future data shape without implying that Robinhood is connected. The explorer uses local static fixtures only and requires no credentials, API keys, tokens, or MCP URLs.
+
 The required future sequence is:
 
 1. Read-only connection: broker account, portfolio, positions, quotes, order history, tradability, and symbol search only.
@@ -137,6 +142,8 @@ ElevenLabs voice support is also not implemented yet.
 StreetSpeak AI is not affiliated with Robinhood, Public, ElevenLabs, or any broker or voice provider.
 
 See [docs/architecture/robinhood-readiness.md](docs/architecture/robinhood-readiness.md) for the Robinhood readiness notes. The current repository has no Robinhood MCP, no live trading path, and no real broker API integration.
+
+For public wording and screenshot guidance, see [docs/public-positioning.md](docs/public-positioning.md). For pre-release validation, see [docs/v0.1-release-checklist.md](docs/v0.1-release-checklist.md).
 
 ## Safety Position
 

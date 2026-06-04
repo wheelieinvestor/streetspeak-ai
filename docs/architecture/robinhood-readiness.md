@@ -22,6 +22,37 @@ The default Robinhood factory returns a disabled adapter. Fixture reads require 
 
 The read-only adapter surface intentionally has no methods for order review, order placement, order staging, order submission, mock submission, routing, or canceling orders.
 
+## Web Fixture Explorer
+
+The v0.1 web app includes a section titled `Robinhood Read-Only Fixture Explorer`. It is a future-readiness demo panel, not a connection surface.
+
+The panel may show only static fixture data from `packages/brokers`:
+
+- Account summary fixture.
+- Buying power fixture.
+- Portfolio snapshot fixture.
+- Positions fixture.
+- Quote lookup fixture.
+- Order history fixture.
+- Tradability check fixture.
+- Symbol search fixture.
+
+The panel must keep the adapter status visibly safe:
+
+| Field                     | Required value |
+| ------------------------- | -------------- |
+| `transport`               | `none`         |
+| `requiresCredentials`     | `false`        |
+| `liveExecutionAvailable`  | `false`        |
+| `orderReviewAvailable`    | `false`        |
+| `orderPlacementAvailable` | `false`        |
+| `cancelOrderAvailable`    | `false`        |
+| Credential fields         | none           |
+| Connection actions        | none           |
+| Order actions             | none           |
+
+The default adapter state remains `disabled`. The web explorer uses the explicit fixture factory to render static local fixtures and must label them as not real account data, broker data, or market data.
+
 ## Gated Broker Phases
 
 Future broker work must move through separate approval gates:
