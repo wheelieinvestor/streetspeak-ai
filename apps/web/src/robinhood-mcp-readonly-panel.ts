@@ -35,6 +35,10 @@ export interface RobinhoodMcpReadOnlyPanelModel {
   readonly storagePolicy: "in_memory_only";
   readonly credentialFieldsRequired: readonly [];
   readonly noOrderActions: true;
+  readonly smokeStatus:
+    | "unavailable_unconfigured"
+    | "not_run"
+    | "redacted_refresh_completed";
   readonly status: BrokerAdapterStatus;
   readonly query: RobinhoodMcpReadOnlyPanelQuery;
   readonly accountSummaries: readonly BrokerAccountSummary[];
@@ -90,6 +94,7 @@ export function createRobinhoodMcpReadOnlyPanelModel(
     storagePolicy: "in_memory_only",
     credentialFieldsRequired: [],
     noOrderActions: true,
+    smokeStatus: options.client ? "not_run" : "unavailable_unconfigured",
     status,
     query,
     accountSummaries: [],
@@ -184,6 +189,7 @@ export async function loadRobinhoodMcpReadOnlyPanelModel(
     storagePolicy: "in_memory_only",
     credentialFieldsRequired: [],
     noOrderActions: true,
+    smokeStatus: "redacted_refresh_completed",
     status,
     query,
     accountSummaries: accounts ?? [],

@@ -9,6 +9,8 @@ import {
   formatMockPortfolio,
   getMockPortfolio,
   getMockQuote,
+  redactRobinhoodMcpReadOnlyPayload,
+  runRobinhoodMcpReadOnlySmokeTest,
   ROBINHOOD_MCP_BLOCKED_TOOLS,
   ROBINHOOD_MCP_READ_ONLY_TOOL_ALLOWLIST,
   type BrokerReadResult,
@@ -541,6 +543,102 @@ describe("broker adapters", () => {
       buyingPower: 1250,
       source: "fixture_static"
     });
+  });
+
+  it("creates a safe unavailable Robinhood MCP smoke summary by default", async () => {
+    const summary = await runRobinhoodMcpReadOnlySmokeTest();
+
+    expect(summary).toMatchObject({
+      kind: "robinhood_mcp_read_only_smoke_test",
+      status: "unavailable",
+      source: "robinhood_mcp_read_only",
+      liveExecutionAvailable: false,
+      orderReviewAvailable: false,
+      orderPlacementAvailable: false,
+      cancelOrderAvailable: false,
+      rawPayloadIncluded: false
+    });
+    expect(summary.lines).toHaveLength(7);
+    expect(summary.lines[0]).toBe("get_accounts: unavailable/unconfigured");
+    expect(JSON.stringify(summary)).not.toContain("account-placeholder-123");
+  });
+
+  it("redacts sensitive Robinhood MCP payload fields before smoke summaries", () => {
+    const redacted = redactRobinhoodMcpReadOnlyPayload({
+      accountId: "account-placeholder-123",
+      accountNumber: "account-number-placeholder",
+      orderId: "order-placeholder-123",
+      portfolioValue: 123456,
+      buyingPower: 5000,
+      positions: [{ symbol: "HOOD", marketValue: 44.96 }],
+      quote: { symbol: "HOOD", last_price: 22.48, bid_price: 22.46 },
+      headers: { authorization: "Bearer placeholder" },
+      rawPayload: { account_id: "nested-account-placeholder" },
+      token: "placeholder"
+    });
+
+    expect(redacted).toEqual({
+      accountId: "[REDACTED]",
+      accountNumber: "[REDACTED]",
+      orderId: "[REDACTED]",
+      portfolioValue: "[REDACTED]",
+      buyingPower: "[REDACTED]",
+      positions: "[REDACTED]",
+      quote: {
+        symbol: "HOOD",
+        last_price: "[REDACTED]",
+        bid_price: "[REDACTED]"
+      },
+      headers: { authorization: "[REDACTED]" },
+      rawPayload: "[REDACTED]",
+      token: "[REDACTED]"
+    });
+  });
+
+  it("creates redacted smoke summaries for allowed read-only MCP tools only", async () => {
+    const calledTools: RobinhoodMcpReadOnlyToolName[] = [];
+    const client: RobinhoodMcpReadOnlyClient = {
+      async callTool(toolName) {
+        calledTools.push(toolName);
+        switch (toolName) {
+          case "get_accounts":
+            return { accounts: [{ accountId: "account-placeholder-123" }] };
+          case "get_portfolio":
+            return { portfolio: { portfolioValue: 123456, buyingPower: 5000 } };
+          case "get_equity_positions":
+            return { positions: [{ symbol: "HOOD", marketValue: 44.96 }] };
+          case "get_equity_quotes":
+            return { quotes: [{ symbol: "HOOD", last_price: 22.48 }] };
+          case "get_equity_orders":
+            return { orders: [{ orderId: "order-placeholder-123" }] };
+          case "get_equity_tradability":
+            return { tradability: { symbol: "HOOD", tradable: true } };
+          case "search":
+            return { results: [{ symbol: "HOOD" }] };
+        }
+      }
+    };
+
+    const summary = await runRobinhoodMcpReadOnlySmokeTest({ client });
+
+    expect(calledTools).toEqual(ROBINHOOD_MCP_READ_ONLY_TOOL_ALLOWLIST);
+    expect(summary.status).toBe("available");
+    expect(summary.lines).toEqual([
+      "get_accounts: success, count=1, identifiers redacted",
+      "get_portfolio: success, values redacted",
+      "get_equity_positions: success, count=1, values redacted",
+      "get_equity_quotes: success, sample symbol checked, prices redacted",
+      "get_equity_orders: success, count=1, identifiers redacted",
+      "get_equity_tradability: success, boolean result only if safe",
+      "search: success, count=1"
+    ]);
+    expect(JSON.stringify(summary)).not.toContain("account-placeholder-123");
+    expect(JSON.stringify(summary)).not.toContain("order-placeholder-123");
+    expect(JSON.stringify(summary)).not.toContain("123456");
+    expect(summary.liveExecutionAvailable).toBe(false);
+    expect(summary.orderReviewAvailable).toBe(false);
+    expect(summary.orderPlacementAvailable).toBe(false);
+    expect(summary.cancelOrderAvailable).toBe(false);
   });
 });
 
