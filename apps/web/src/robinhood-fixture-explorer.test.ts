@@ -5,7 +5,8 @@ import {
   isSafeReadOnlyFixtureStatus,
   lookupRobinhoodFixtureQuote,
   searchRobinhoodFixtureSymbols,
-  V01_MOCK_DEMO_STATUS
+  V01_MOCK_DEMO_STATUS,
+  V01_SAFETY_CHECKLIST
 } from "./robinhood-fixture-explorer";
 
 describe("Robinhood fixture explorer model", () => {
@@ -99,15 +100,41 @@ describe("Robinhood fixture explorer model", () => {
         }),
         expect.objectContaining({
           label: "Real Robinhood connection",
-          status: "not active"
+          status: "unavailable by default"
         }),
         expect.objectContaining({
           label: "Order review",
-          status: "not active"
+          status: "not implemented"
         }),
         expect.objectContaining({
           label: "Live trading",
           status: "unavailable"
+        })
+      ])
+    );
+  });
+
+  it("pins the public demo safety checklist without live or order-action capability", () => {
+    expect(V01_SAFETY_CHECKLIST).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "No live trading",
+          detail: "Live trading flags remain false and unavailable."
+        }),
+        expect.objectContaining({
+          label: "No Robinhood order actions"
+        }),
+        expect.objectContaining({
+          label: "No broker login"
+        }),
+        expect.objectContaining({
+          label: "Exact mock confirmation"
+        }),
+        expect.objectContaining({
+          label: "Local-only exports"
+        }),
+        expect.objectContaining({
+          label: "No persisted real account data"
         })
       ])
     );

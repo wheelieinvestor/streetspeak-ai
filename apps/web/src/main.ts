@@ -40,6 +40,7 @@ import {
 } from "./demo-state";
 import {
   createRobinhoodFixtureExplorerModel,
+  V01_SAFETY_CHECKLIST,
   V01_MOCK_DEMO_STATUS,
   type RobinhoodFixtureExplorerModel
 } from "./robinhood-fixture-explorer";
@@ -504,11 +505,11 @@ function createMarkup(options: MarkupOptions): string {
         <div>
           <p class="eyebrow">StreetSpeak AI</p>
           <h1>Voice-native mock trading desk</h1>
-          <p class="subtitle">A local, safety-first demo for self-directed trading workflows.</p>
+          <p class="subtitle">A local public demo for self-directed workflows: mock tickets, exact-code confirmation, local receipts, and no live trading.</p>
         </div>
         <div class="mode-stack" aria-label="mode status">
-          <span class="badge">Mock mode locked on</span>
-          <span class="badge badge-danger">Live trading unavailable</span>
+          <span class="badge">Mock Only</span>
+          <span class="badge badge-danger">No Live Trading</span>
         </div>
       </header>
 
@@ -520,8 +521,6 @@ function createMarkup(options: MarkupOptions): string {
       ${renderSettings(settings, storageAvailable)}
 
       ${renderV01MockDemoStatus()}
-
-      ${renderRobinhoodMcpReadOnlyPanel(robinhoodMcpPanel, robinhoodMcpBusy)}
 
       <section class="command-band" aria-label="mock command input">
         <div class="command-layout">
@@ -626,6 +625,8 @@ function createMarkup(options: MarkupOptions): string {
         </section>
       </section>
 
+      ${renderRobinhoodMcpReadOnlyPanel(robinhoodMcpPanel, robinhoodMcpBusy)}
+
       ${renderRobinhoodFixtureExplorer(robinhoodFixtureExplorer)}
     </main>
     ${
@@ -689,6 +690,18 @@ function renderV01MockDemoStatus(): string {
           `
         ).join("")}
       </dl>
+      <div class="fixture-section" aria-label="v0.1 safety checklist">
+        <div class="fixture-section-heading">
+          <h3>Safety Checklist</h3>
+          <span>public demo boundary</span>
+        </div>
+        <ul class="education-list safety-checklist">
+          ${V01_SAFETY_CHECKLIST.map(
+            (item) =>
+              `<li><strong>${escapeHtml(item.label)}</strong><span>${escapeHtml(item.detail)}</span></li>`
+          ).join("")}
+        </ul>
+      </div>
     </section>
   `;
 }

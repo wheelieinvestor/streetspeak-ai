@@ -1,6 +1,6 @@
 # StreetSpeak AI
 
-Voice-native trading desk for AI agents.
+Voice-native mock trading desk for AI agents and self-directed trading workflows.
 
 StreetSpeak AI is a local-first, open-source workspace for self-directed traders who want to ask portfolio and market questions, assemble mock order tickets by voice, and review risk before any future execution workflow.
 
@@ -12,13 +12,20 @@ StreetSpeak AI is for developers and self-directed investors who want a transpar
 
 It is not an investment adviser, broker, signal service, or recommendation engine. Users are responsible for every trading decision.
 
-## Current Version
+## Product Vision
+
+StreetSpeak AI is exploring a safety-first trading-desk interface where typed or voice commands can become inspectable tickets, every risky action leaves an audit trail, and future broker capability is added only through explicit read-only, review, and execution gates.
+
+The v0.1 release proves the local mock workflow first: onboarding, command parsing, static data, ticket creation, safety review, exact-code mock confirmation, receipt export, fixture exploration, and a read-only MCP boundary that remains unavailable by default.
+
+## Current Status
 
 StreetSpeak AI v0.1 is a local mock trading desk demo. It can:
 
 - Route typed mock portfolio, quote, and share-quantity equity order commands.
-- Optionally capture browser-native speech transcripts when the user's browser supports it.
+- Optionally capture browser-native speech transcripts when the user's browser supports it; typed input remains the reliable fallback.
 - Require first-run local safety onboarding before the demo flow opens.
+- Keep local onboarding and settings working from browser storage.
 - Store onboarding acknowledgement, demo settings, and a redacted audit timeline in local browser storage only.
 - Show a static/fake mock portfolio and static/fake mock quotes for `HOOD`, `SPY`, `NVDA`, `AAPL`, and `SOFI`.
 - Build mock market or limit equity order tickets for supported share-quantity commands.
@@ -27,9 +34,21 @@ StreetSpeak AI v0.1 is a local mock trading desk demo. It can:
 - Reject generic confirmations like `yes`, `do it`, or `confirmed`.
 - Persist redacted local audit events for command, routing, ticket, safety, confirmation, and mock execution events.
 - Export local-only audit JSON and mock receipt Markdown/JSON.
-- Show a separate `Robinhood Read-Only Fixture Explorer` panel backed only by static fixtures from `packages/brokers`.
-- Show a separate `Real Robinhood MCP Read-Only Connection` panel for externally managed MCP clients. The default state is unavailable/unconfigured unless the host page provides a read-only client at runtime.
+- Show the `Robinhood Read-Only Fixture Explorer` backed only by static fixtures from `packages/brokers`.
+- Show the `Real Robinhood MCP Read-Only Connection` panel for externally managed MCP clients. The default state is unavailable/unconfigured unless the host page provides a read-only client at runtime.
 - Expose Robinhood read-only adapter contracts for fixture data and externally managed MCP read-only data. Neither path includes order review, order placement, cancel order, or live execution.
+
+StreetSpeak AI v0.1 current status:
+
+- Mock trading desk: working locally with typed input and browser voice where supported.
+- Onboarding and settings: working locally.
+- Local audit timeline and receipt exports: working locally with redacted browser storage.
+- Robinhood fixture explorer: working with committed static fixture data only.
+- Robinhood read-only MCP boundary: scaffolded and unavailable by default unless externally configured at runtime.
+- Redacted Robinhood read-only smoke harness: added; the safe default run should report unavailable/unconfigured.
+- Real Robinhood verified read-only: not claimed unless a redacted smoke test is actually run with an external client.
+- Robinhood order review: not implemented.
+- Live execution: not implemented and unavailable.
 
 Mock mode is the default first experience. Live execution is unavailable and must remain disabled by default in future phases.
 
@@ -67,7 +86,7 @@ The fixture explorer displays static account summary, buying power, portfolio, p
 
 The MCP panel is read-only and unavailable by default. If a developer provides an externally managed MCP client at runtime, it can request only `get_accounts`, `get_portfolio`, `get_equity_positions`, `get_equity_quotes`, `get_equity_orders`, `get_equity_tradability`, and `search`. StreetSpeak AI stores no MCP URL, token, broker credential, raw account identifier, raw portfolio value, raw holding, raw order ID, or raw MCP output in the repo or browser local storage by default.
 
-See [docs/demo-script.md](docs/demo-script.md) and [docs/v0.1-demo-checklist.md](docs/v0.1-demo-checklist.md) for reviewer walkthroughs.
+See [docs/v0.1-public-demo-guide.md](docs/v0.1-public-demo-guide.md), [docs/demo-script.md](docs/demo-script.md), and [docs/v0.1-demo-checklist.md](docs/v0.1-demo-checklist.md) for reviewer walkthroughs.
 
 ## Browser Voice Input
 
@@ -149,7 +168,7 @@ StreetSpeak AI is not affiliated with Robinhood, Public, ElevenLabs, or any brok
 
 See [docs/architecture/robinhood-readiness.md](docs/architecture/robinhood-readiness.md) and [docs/robinhood-readonly-setup.md](docs/robinhood-readonly-setup.md) for the Robinhood readiness notes. The current repository has no live trading path and no real broker API integration outside the externally managed read-only MCP client boundary.
 
-For public wording and screenshot guidance, see [docs/public-positioning.md](docs/public-positioning.md). For pre-release validation, see [docs/v0.1-release-checklist.md](docs/v0.1-release-checklist.md).
+For public wording and screenshot guidance, see [docs/public-positioning.md](docs/public-positioning.md) and [docs/launch-post-draft.md](docs/launch-post-draft.md). For pre-release validation, see [docs/v0.1-release-checklist.md](docs/v0.1-release-checklist.md) and [docs/v0.1-manual-qa.md](docs/v0.1-manual-qa.md).
 
 ## Safety Position
 

@@ -475,6 +475,20 @@ h3 {
   line-height: 1.35;
 }
 
+.safety-checklist {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.safety-checklist li {
+  display: grid;
+  gap: 6px;
+}
+
+.safety-checklist span {
+  color: #9ba69f;
+  font-size: 0.88rem;
+}
+
 .fixture-list li {
   align-items: flex-start;
   flex-wrap: wrap;
