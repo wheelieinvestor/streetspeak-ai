@@ -37,6 +37,9 @@ importers:
       "@streetspeak-ai/audit":
         specifier: workspace:*
         version: link:../../packages/audit
+      "@streetspeak-ai/brokers":
+        specifier: workspace:*
+        version: link:../../packages/brokers
       "@streetspeak-ai/core":
         specifier: workspace:*
         version: link:../../packages/core

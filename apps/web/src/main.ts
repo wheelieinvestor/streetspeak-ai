@@ -38,6 +38,11 @@ import {
   type LocalDemoStorage,
   type OnboardingAcknowledgementId
 } from "./demo-state";
+import {
+  createRobinhoodFixtureExplorerModel,
+  V01_MOCK_DEMO_STATUS,
+  type RobinhoodFixtureExplorerModel
+} from "./robinhood-fixture-explorer";
 import "./styles.css";
 
 const EXAMPLE_COMMANDS = [
@@ -415,6 +420,7 @@ function createMarkup(options: MarkupOptions): string {
     !onboardingAccepted ||
     !state?.challenge ||
     state.status === "mock_submitted";
+  const robinhoodFixtureExplorer = createRobinhoodFixtureExplorerModel();
 
   return `
     <main class="desk-shell">
@@ -436,6 +442,8 @@ function createMarkup(options: MarkupOptions): string {
       </section>
 
       ${renderSettings(settings, storageAvailable)}
+
+      ${renderV01MockDemoStatus()}
 
       <section class="command-band" aria-label="mock command input">
         <div class="command-layout">
@@ -539,6 +547,8 @@ function createMarkup(options: MarkupOptions): string {
           ${settings.showAuditTimeline ? renderAuditTimeline(persistedAuditTimeline) : `<p class="empty">Audit timeline is hidden by local settings.</p>`}
         </section>
       </section>
+
+      ${renderRobinhoodFixtureExplorer(robinhoodFixtureExplorer)}
     </main>
     ${
       onboardingAccepted
@@ -582,6 +592,29 @@ function renderSettings(
   `;
 }
 
+function renderV01MockDemoStatus(): string {
+  return `
+    <section class="status-panel" aria-label="v0.1 Mock Demo status">
+      <div class="panel-heading">
+        <h2>v0.1 Mock Demo</h2>
+        <span class="badge badge-danger">Live trading unavailable</span>
+      </div>
+      <p class="status-copy">StreetSpeak AI is mock-first today. The mock trading desk is the primary demo, receipt and audit exports are local-only, and no live broker order can be placed.</p>
+      <dl class="status-grid">
+        ${V01_MOCK_DEMO_STATUS.map(
+          (item) => `
+            <div>
+              <dt>${escapeHtml(item.label)}</dt>
+              <dd>${escapeHtml(item.status)}</dd>
+              <small>${escapeHtml(item.detail)}</small>
+            </div>
+          `
+        ).join("")}
+      </dl>
+    </section>
+  `;
+}
+
 function renderVoiceInput(
   voiceState: BrowserVoiceState,
   settings: DemoSettings,
@@ -614,6 +647,199 @@ function renderVoiceInput(
           : ""
       }
     </div>
+  `;
+}
+
+function renderRobinhoodFixtureExplorer(
+  model: RobinhoodFixtureExplorerModel
+): string {
+  const status = model.fixtureStatus;
+  const account = model.accountSummary;
+  const buyingPower = model.buyingPower;
+  const portfolio = model.portfolioSnapshot;
+  const quote = model.quoteLookup.quote;
+
+  return `
+    <section class="fixture-explorer" aria-label="Robinhood Read-Only Fixture Explorer">
+      <div class="fixture-hero">
+        <div>
+          <p class="eyebrow">Future-readiness demo panel</p>
+          <h2>Robinhood Read-Only Fixture Explorer</h2>
+          <p class="status-copy">This panel uses static fixture data only. It is not a Robinhood connection, real account data, real broker data, or real market data.</p>
+        </div>
+        <div class="mode-stack" aria-label="Robinhood fixture status">
+          <span class="badge">Fixture-only</span>
+          <span class="badge badge-danger">No live connection</span>
+        </div>
+      </div>
+
+      <section class="fixture-section" aria-label="Robinhood adapter status">
+        <div class="fixture-section-heading">
+          <h3>Disabled / Read-Only Status</h3>
+          <span>adapter scaffold only</span>
+        </div>
+        <p class="empty">Default Robinhood adapter state is ${escapeHtml(model.disabledStatus.state)}. This explorer explicitly uses local fixture reads and still has no credentials, MCP transport, order review, placement, or cancel capability.</p>
+        <dl class="detail-list fixture-status-list">
+          <div><dt>State</dt><dd>${escapeHtml(status.state)}</dd></div>
+          <div><dt>Transport</dt><dd>${escapeHtml(status.transport)}</dd></div>
+          <div><dt>Requires credentials</dt><dd>${String(status.requiresCredentials)}</dd></div>
+          <div><dt>Live execution available</dt><dd>${String(status.liveExecutionAvailable)}</dd></div>
+          <div><dt>Order review available</dt><dd>${String(status.orderReviewAvailable)}</dd></div>
+          <div><dt>Order placement available</dt><dd>${String(status.orderPlacementAvailable)}</dd></div>
+          <div><dt>Cancel order available</dt><dd>${String(status.cancelOrderAvailable)}</dd></div>
+          <div><dt>Credential fields required</dt><dd>${model.credentialFieldsRequired.length}</dd></div>
+        </dl>
+      </section>
+
+      <section class="fixture-section" aria-label="StreetSpeak AI user education">
+        <div class="fixture-section-heading">
+          <h3>Mock-First Boundary</h3>
+          <span>user education</span>
+        </div>
+        <ul class="education-list">
+          ${model.education.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+        </ul>
+      </section>
+
+      <div class="fixture-grid">
+        <section class="fixture-section" aria-label="Robinhood account summary fixture">
+          <div class="fixture-section-heading">
+            <h3>Account Summary Fixture</h3>
+            <span>static fixture data only</span>
+          </div>
+          <p class="fixture-note">${escapeHtml(account.label)}.</p>
+          <dl class="detail-list">
+            <div><dt>Account label</dt><dd>${escapeHtml(account.accountLabel)}</dd></div>
+            <div><dt>Account type</dt><dd>${escapeHtml(account.accountType)}</dd></div>
+            <div><dt>Status</dt><dd>${escapeHtml(account.status)}</dd></div>
+            <div><dt>Source</dt><dd>${escapeHtml(account.source)}</dd></div>
+            <div><dt>As of</dt><dd>${escapeHtml(account.asOf)}</dd></div>
+          </dl>
+        </section>
+
+        <section class="fixture-section" aria-label="Robinhood buying power fixture">
+          <div class="fixture-section-heading">
+            <h3>Buying Power Fixture</h3>
+            <span>not real buying power</span>
+          </div>
+          <p class="fixture-note">${escapeHtml(buyingPower.label)}.</p>
+          <dl class="detail-list">
+            <div><dt>Cash available</dt><dd>${formatCurrency(buyingPower.cashAvailable)}</dd></div>
+            <div><dt>Buying power</dt><dd>${formatCurrency(buyingPower.buyingPower)}</dd></div>
+            <div><dt>Currency</dt><dd>${escapeHtml(buyingPower.currency)}</dd></div>
+            <div><dt>Source</dt><dd>${escapeHtml(buyingPower.source)}</dd></div>
+          </dl>
+        </section>
+
+        <section class="fixture-section" aria-label="Robinhood portfolio snapshot fixture">
+          <div class="fixture-section-heading">
+            <h3>Portfolio Snapshot Fixture</h3>
+            <span>not a broker account</span>
+          </div>
+          <p class="fixture-note">${escapeHtml(portfolio.label)}.</p>
+          <dl class="detail-list">
+            <div><dt>Total equity value</dt><dd>${formatCurrency(portfolio.totalEquityValue)}</dd></div>
+            <div><dt>Positions</dt><dd>${portfolio.positions.length}</dd></div>
+            <div><dt>Source</dt><dd>${escapeHtml(portfolio.source)}</dd></div>
+            <div><dt>As of</dt><dd>${escapeHtml(portfolio.asOf)}</dd></div>
+          </dl>
+        </section>
+
+        <section class="fixture-section" aria-label="Robinhood positions fixture">
+          <div class="fixture-section-heading">
+            <h3>Positions Fixture</h3>
+            <span>not real positions</span>
+          </div>
+          <ul class="position-list fixture-list">
+            ${model.positions
+              .map(
+                (position) => `
+                  <li>
+                    <strong>${escapeHtml(position.symbol)}</strong>
+                    <span>${position.quantity} fixture shares</span>
+                    <span>${formatCurrency(position.mockMarketValue)}</span>
+                    <small>${escapeHtml(position.source)} - static fixture only</small>
+                  </li>
+                `
+              )
+              .join("")}
+          </ul>
+        </section>
+
+        <section class="fixture-section" aria-label="Robinhood quote lookup fixture">
+          <div class="fixture-section-heading">
+            <h3>Quote Lookup Fixture</h3>
+            <span>not real market data</span>
+          </div>
+          <p class="fixture-note">${escapeHtml(quote.label)}.</p>
+          <dl class="detail-list">
+            <div><dt>Query</dt><dd>${escapeHtml(model.quoteLookup.query)}</dd></div>
+            <div><dt>Symbol</dt><dd>${escapeHtml(quote.symbol)}</dd></div>
+            <div><dt>Last</dt><dd>${formatCurrency(quote.last)}</dd></div>
+            <div><dt>Bid / Ask</dt><dd>${formatCurrency(quote.bid)} / ${formatCurrency(quote.ask)}</dd></div>
+            <div><dt>Source</dt><dd>${escapeHtml(quote.source)}</dd></div>
+          </dl>
+        </section>
+
+        <section class="fixture-section" aria-label="Robinhood order history fixture">
+          <div class="fixture-section-heading">
+            <h3>Order History Fixture</h3>
+            <span>not real orders</span>
+          </div>
+          <ul class="audit-list fixture-list">
+            ${model.orderHistory
+              .map(
+                (order) => `
+                  <li>
+                    <span>${escapeHtml(order.status)} ${escapeHtml(order.side)} ${order.quantity} ${escapeHtml(order.symbol)}</span>
+                    <small>${escapeHtml(order.label)}</small>
+                  </li>
+                `
+              )
+              .join("")}
+          </ul>
+        </section>
+
+        <section class="fixture-section" aria-label="Robinhood tradability check fixture">
+          <div class="fixture-section-heading">
+            <h3>Tradability Check Fixture</h3>
+            <span>not real broker availability</span>
+          </div>
+          <ul class="audit-list fixture-list">
+            ${model.tradabilityChecks
+              .map(
+                (check) => `
+                  <li>
+                    <span>${escapeHtml(check.symbol)}: ${check.tradable ? "fixture tradable" : "not tradable in fixture"}</span>
+                    <small>${escapeHtml(check.message)}</small>
+                  </li>
+                `
+              )
+              .join("")}
+          </ul>
+        </section>
+
+        <section class="fixture-section" aria-label="Robinhood symbol search fixture">
+          <div class="fixture-section-heading">
+            <h3>Symbol Search Fixture</h3>
+            <span>static symbol results only</span>
+          </div>
+          <p class="fixture-note">Query "${escapeHtml(model.symbolSearch.query)}" searches local fixture symbols only.</p>
+          <ul class="audit-list fixture-list">
+            ${model.symbolSearch.results
+              .map(
+                (result) => `
+                  <li>
+                    <span>${escapeHtml(result.symbol)} - ${escapeHtml(result.name)}</span>
+                    <small>${result.tradableInFixture ? "tradable in fixture" : "not tradable in fixture"} / ${escapeHtml(result.source)}</small>
+                  </li>
+                `
+              )
+              .join("")}
+          </ul>
+        </section>
+      </div>
+    </section>
   `;
 }
 

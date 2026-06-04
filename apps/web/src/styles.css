@@ -53,7 +53,9 @@ input:disabled {
 .panel,
 .command-band,
 .warning-band,
-.settings-panel {
+.settings-panel,
+.status-panel,
+.fixture-explorer {
   border: 1px solid rgba(212, 217, 211, 0.14);
   border-radius: 8px;
   background: rgba(24, 27, 25, 0.94);
@@ -107,6 +109,13 @@ h1 {
 h2 {
   margin-bottom: 0;
   font-size: 1rem;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+h3 {
+  margin: 0;
+  font-size: 0.94rem;
   line-height: 1.25;
   letter-spacing: 0;
 }
@@ -179,10 +188,16 @@ h2 {
   padding: 16px;
 }
 
+.status-panel {
+  margin-top: 14px;
+  padding: 18px;
+}
+
 .settings-status,
 .metric-list,
 .detail-list,
-.quote-strip {
+.quote-strip,
+.status-grid {
   display: grid;
   gap: 8px;
   margin: 0;
@@ -190,6 +205,36 @@ h2 {
 
 .settings-status {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.status-copy {
+  margin-bottom: 14px;
+  color: #c9d4ce;
+  line-height: 1.45;
+}
+
+.status-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.status-grid div {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(212, 217, 211, 0.1);
+  border-radius: 8px;
+  padding: 10px;
+  background: #151917;
+}
+
+.status-grid dd {
+  text-align: left;
+}
+
+.status-grid small,
+.fixture-section-heading span,
+.fixture-list small,
+.fixture-note {
+  color: #9ba69f;
 }
 
 .settings-controls {
@@ -360,6 +405,87 @@ h2 {
   margin-top: 14px;
 }
 
+.fixture-explorer {
+  margin-top: 14px;
+  padding: 18px;
+}
+
+.fixture-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.fixture-hero h2 {
+  margin-bottom: 8px;
+  font-size: 1.25rem;
+}
+
+.fixture-section {
+  min-width: 0;
+  border-top: 1px solid rgba(212, 217, 211, 0.12);
+  margin-top: 16px;
+  padding-top: 16px;
+}
+
+.fixture-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 18px;
+}
+
+.fixture-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.fixture-section-heading span {
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+.fixture-note {
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.fixture-status-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.education-list {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.education-list li {
+  border: 1px solid rgba(212, 217, 211, 0.1);
+  border-radius: 8px;
+  padding: 10px;
+  background: #151917;
+  color: #dfe7e2;
+  line-height: 1.35;
+}
+
+.fixture-list li {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.fixture-list small {
+  flex-basis: 100%;
+  text-align: left;
+  line-height: 1.35;
+}
+
 .quote-strip div {
   display: grid;
   gap: 2px;
@@ -502,8 +628,16 @@ dd {
   .command-layout,
   .desk-grid,
   .quote-strip,
-  .settings-status {
+  .settings-status,
+  .status-grid,
+  .fixture-grid,
+  .fixture-status-list,
+  .education-list {
     grid-template-columns: 1fr;
+  }
+
+  .fixture-hero {
+    flex-direction: column;
   }
 
   .voice-panel {
@@ -527,6 +661,8 @@ dd {
   .panel,
   .command-band,
   .settings-panel,
+  .status-panel,
+  .fixture-explorer,
   .topbar,
   .warning-band,
   .onboarding-modal {

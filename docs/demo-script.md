@@ -46,9 +46,21 @@ Open the local Vite URL shown in the terminal.
    - Use `Clear audit timeline` to remove persisted audit events from this browser.
    - Use `Reset all local demo data` when a clean demo state is needed.
 
-9. Run `buy $500 of HOOD`.
-   - The app returns unsupported notional handling.
-   - No final ticket is created and no dollar amount is converted into shares.
+9. Review the `v0.1 Mock Demo` status panel.
+   - Confirm the mock trading desk is available.
+   - Confirm the Robinhood fixture explorer is fixture-only.
+   - Confirm real Robinhood connection, order review, and live trading are not active.
+
+10. Review the `Robinhood Read-Only Fixture Explorer`.
+
+- Confirm the panel shows static account summary, buying power, portfolio, positions, quote lookup, order history, tradability, and symbol search fixtures.
+- Confirm the adapter transport is `none` and credentials are not required.
+- Confirm no broker login, credential field, MCP URL field, order review, order placement, cancel order, or live execution action exists.
+
+11. Run `buy $500 of HOOD`.
+
+- The app returns unsupported notional handling.
+- No final ticket is created and no dollar amount is converted into shares.
 
 ## Optional Browser Voice
 
