@@ -14,11 +14,12 @@ Security principles:
 - First-run onboarding acknowledgement, local demo settings, and redacted audit events may be stored only in browser local storage.
 - Receipt and audit exports must remain local-only and must not create public URLs or upload data.
 - Browser-native voice input must not add external speech API keys, raw-audio storage, or StreetSpeak raw-audio uploads.
+- The Robinhood read-only scaffold is disabled by default, fixture-only, and has no MCP transport, broker login, credentials, real account data, real market data, order review, order placement, or cancel-order methods.
 - ElevenLabs, Robinhood MCP, Public, and live broker execution are not implemented in this scaffold.
 
 Future broker integration requirements:
 
-- Start with read-only broker data before any order review work.
+- Start with a separately approved read-only connection before any order review work.
 - Keep order review separate from live execution.
 - Require separate explicit approval before any live execution implementation.
 - Never log raw broker account IDs or store broker secrets in plaintext.

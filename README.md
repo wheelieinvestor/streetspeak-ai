@@ -4,7 +4,7 @@ Voice-native trading desk for AI agents.
 
 StreetSpeak AI is a local-first, open-source workspace for self-directed traders who want to ask portfolio and market questions, assemble mock order tickets by voice, and review risk before any future execution workflow.
 
-This first scaffold is mock-only. It does not implement live trading, Robinhood MCP integration, broker login flows, trade recommendations, or any system that can place orders.
+The local demo remains mock-only. The broker package includes a disabled-by-default, fixture-only Robinhood read-only scaffold for future integration planning, but it does not implement Robinhood MCP, broker login flows, live trading, trade recommendations, or any system that can place orders.
 
 ## Who It Is For
 
@@ -27,6 +27,7 @@ StreetSpeak AI v0.1 is a local mock trading desk demo. It can:
 - Reject generic confirmations like `yes`, `do it`, or `confirmed`.
 - Persist redacted local audit events for command, routing, ticket, safety, confirmation, and mock execution events.
 - Export local-only audit JSON and mock receipt Markdown/JSON.
+- Expose disabled-by-default Robinhood read-only adapter contracts backed only by static fixtures in `packages/brokers`; these are not wired into the demo as a live broker connection.
 
 Mock mode is the default first experience. Live execution is unavailable and must remain disabled by default in future phases.
 
@@ -119,7 +120,15 @@ StreetSpeak AI v0.1 does not support notional/dollar-based final tickets. A comm
 
 ## Planned Broker Support
 
-Robinhood Agentic Trading through MCP is planned for a future phase, starting with a read-only adapter. It is not implemented yet.
+Robinhood Agentic Trading through MCP is planned for a future phase. The current repository only has a disabled-by-default, fixture-only Robinhood read-only adapter scaffold in `packages/brokers`.
+
+The required future sequence is:
+
+1. Read-only connection: broker account, portfolio, positions, quotes, order history, tradability, and symbol search only.
+2. Order review: separately approved reviewable tickets and safety checks, still without live execution.
+3. Live execution: separately approved live trading work only after the previous gates exist.
+
+The current Robinhood scaffold has no MCP transport, broker login, credentials, real account data, real market data, order review, order placement, or cancel-order methods.
 
 Public adapter support is also planned for a later phase. It is not implemented yet.
 
@@ -127,7 +136,7 @@ ElevenLabs voice support is also not implemented yet.
 
 StreetSpeak AI is not affiliated with Robinhood, Public, ElevenLabs, or any broker or voice provider.
 
-See [docs/architecture/robinhood-readiness.md](docs/architecture/robinhood-readiness.md) for the pre-Robinhood readiness notes. The current repository has no Robinhood MCP, no live trading path, and no real broker API integration.
+See [docs/architecture/robinhood-readiness.md](docs/architecture/robinhood-readiness.md) for the Robinhood readiness notes. The current repository has no Robinhood MCP, no live trading path, and no real broker API integration.
 
 ## Safety Position
 
@@ -183,6 +192,6 @@ Useful project structure:
 - `packages/orders` - order ticket types and validation.
 - `packages/safety` - safety review and confirmation contracts.
 - `packages/audit` - audit event types, redaction helpers, audit exports, and mock receipt exports.
-- `packages/brokers` - mock-only broker adapter interfaces.
+- `packages/brokers` - mock broker adapter plus disabled fixture-only Robinhood read-only contracts.
 - `packages/voice` - voice transcript and provider interfaces.
 - `docs` - architecture, legal, security, and collaboration notes.

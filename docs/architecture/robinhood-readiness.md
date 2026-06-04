@@ -1,39 +1,48 @@
 # Robinhood Readiness
 
-StreetSpeak AI v0.1 is mock-only. This document describes future readiness work only. It does not implement Robinhood MCP, broker login, broker API calls, live order placement, real market data, or live execution.
+StreetSpeak AI v0.1 is still a mock-first trading desk. The current repository includes a disabled-by-default Robinhood read-only scaffold in `packages/brokers`, but it is fixture-only and has no active Robinhood connection.
 
-## Future Read-Only Phase
+The scaffold does not implement Robinhood MCP, broker login, broker API calls, credential configuration, real account data, real market data, order review, cancel order, live order placement, or live execution.
 
-The first Robinhood-facing phase must be read-only. It may inspect:
+## Current Read-Only Scaffold
 
+The Robinhood read-only scaffold is limited to TypeScript contracts, capability metadata, status/error results, and static fixture data. It may model:
+
+- Broker account summary.
 - Portfolio snapshot.
+- Buying power.
 - Equity positions.
 - Equity quotes.
-- Order history.
+- Equity order history items.
 - Tradability checks.
+- Symbol search results.
+- Adapter status and read errors.
 
-The read-only phase must not place orders, stage live execution, store broker secrets in plaintext, log raw broker account identifiers, or make trade recommendations.
+The default Robinhood factory returns a disabled adapter. Fixture reads require an explicit fixture factory and still use only local static data. No secrets, API keys, session tokens, broker account identifiers, MCP server URLs, or Robinhood credentials are configured or required.
+
+The read-only adapter surface intentionally has no methods for order review, order placement, order staging, order submission, mock submission, routing, or canceling orders.
 
 ## Gated Broker Phases
 
 Future broker work must move through separate approval gates:
 
-1. Read-only only: portfolio, positions, quotes, order history, and tradability checks.
-2. Order review only: construct reviewable tickets and safety checks without live execution.
+1. Read-only connection: account, portfolio, positions, buying power, quotes, order history, tradability, and symbol search only.
+2. Order review: reviewable tickets and safety checks only; no live execution.
 3. Live execution: only after separate explicit approval for live trading work.
 
 Each phase must preserve mock mode and typed fallback behavior. Live trading must remain unavailable until an explicitly approved live-execution task changes that boundary.
 
 ## Broker Capability Matrix
 
-| Capability              | Status                                                 | Scope                                                                                               |
-| ----------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| Mock adapter            | Current                                                | Static mock portfolio, static mock quotes, mock ticket review, and mock submission only.            |
-| Robinhood read-only     | Future                                                 | Portfolio snapshot, equity positions, equity quotes, order history, and tradability checks only.    |
-| Robinhood order review  | Future                                                 | Reviewable order tickets and safety checks only; no live execution.                                 |
-| Robinhood live equities | Future gated                                           | Requires separate explicit approval, exact challenge phrase/code, and live-execution safety review. |
-| Public                  | Future                                                 | No implementation in v0.1. Must start read-only if added.                                           |
-| Options                 | Future ticket parsing only unless officially supported | No live options execution unless a future officially supported broker path is explicitly approved.  |
+| Capability              | Status                                                 | Scope                                                                                                                  |
+| ----------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| Mock adapter            | Current                                                | Static mock portfolio, static mock quotes, mock ticket review, and mock submission only.                               |
+| Robinhood read-only     | Current scaffold, fixture-only                         | Disabled by default; static account, portfolio, position, quote, order history, tradability, and search fixtures only. |
+| Robinhood connection    | Future gated                                           | Separately approved real read-only connection only; no order review or live execution.                                 |
+| Robinhood order review  | Future gated                                           | Reviewable order tickets and safety checks only; no live execution.                                                    |
+| Robinhood live equities | Future gated                                           | Requires separate explicit approval, exact challenge phrase/code, and live-execution safety review.                    |
+| Public                  | Future                                                 | No implementation in v0.1. Must start read-only if added.                                                              |
+| Options                 | Future ticket parsing only unless officially supported | No live options execution unless a future officially supported broker path is explicitly approved.                     |
 
 ## Safety Requirements
 
@@ -51,7 +60,7 @@ Future Robinhood work must keep these requirements:
 
 ## Current Boundary
 
-Current StreetSpeak AI behavior remains mock-only:
+Current StreetSpeak AI behavior remains mock-first and non-live:
 
 - No Robinhood MCP.
 - No Public integration.
@@ -60,5 +69,6 @@ Current StreetSpeak AI behavior remains mock-only:
 - No real broker login.
 - No real market data APIs.
 - No broker credentials or API keys.
+- No order review or cancel-order implementation for Robinhood.
 - No raw audio storage by StreetSpeak AI.
 - No deployment or production service.

@@ -17,6 +17,7 @@ The initial security model is conservative:
 - ElevenLabs and external speech API keys are not implemented.
 - Confirmation challenges require a specific phrase and reject generic responses.
 - Audit event payloads redact common secret-like fields before storage.
-- Broker adapters expose mock review and mock submission only.
+- The mock broker adapter exposes mock review and mock submission only.
+- The Robinhood read-only scaffold is disabled by default, fixture-only, and exposes no order review, placement, staging, submission, or cancel methods.
 
-Future broker phases should start read-only, require explicit opt-in, and keep confirmation and audit logic separate from adapter implementation. No future broker work should store broker secrets in plaintext, log raw account IDs, skip order review before live execution, or allow generic confirmation phrases.
+Future broker phases should start with a separately approved read-only connection, require explicit opt-in, and keep confirmation and audit logic separate from adapter implementation. No future broker work should store broker secrets in plaintext, log raw account IDs, skip order review before live execution, or allow generic confirmation phrases.
