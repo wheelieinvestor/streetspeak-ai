@@ -28,7 +28,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -195,6 +196,27 @@ h2 {
   display: grid;
   gap: 12px;
   align-content: start;
+}
+
+.export-actions {
+  margin: 14px 0;
+}
+
+.export-status {
+  margin-top: 12px;
+}
+
+.export-preview {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid rgba(212, 217, 211, 0.18);
+  border-radius: 8px;
+  padding: 12px;
+  background: #111412;
+  color: #d8efe3;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .toggle-row,

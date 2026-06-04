@@ -175,7 +175,7 @@ export class BrowserVoiceController {
       this.#emit({
         status: "listening",
         message:
-          "Listening locally through the browser. No raw audio is stored by StreetSpeak AI.",
+          "Listening through browser-native speech input. StreetSpeak AI does not store raw audio or send it to a StreetSpeak server.",
         lastTranscript: this.#state.lastTranscript
       });
     };
@@ -202,7 +202,7 @@ export class BrowserVoiceController {
         status: transcript.status === "transcribed" ? "stopped" : "error",
         message:
           transcript.status === "transcribed"
-            ? "Voice transcript captured locally by the browser."
+            ? "Browser-native speech transcript captured. StreetSpeak AI stores only the resulting text when an audit event is created."
             : "No usable voice transcript was captured. Typed commands still work.",
         lastTranscript: transcript.text
       });

@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  createAuditTimelineExport,
   createAuditEvent,
+  createMockTradeReceipt,
   InMemoryAuditSink,
-  redactAuditPayload
+  NO_LIVE_BROKER_ORDER_PLACED_STATEMENT,
+  redactAuditPayload,
+  renderMockTradeReceiptMarkdown,
+  serializeAuditExport
 } from "./index.js";
 
 describe("audit events", () => {
@@ -30,12 +35,17 @@ describe("audit events", () => {
       redactAuditPayload({
         accountId: "acct-id",
         accountNumber: "acct-number",
+        accountIdentifier: "acct-identifier",
         brokerAccountId: "broker-account",
+        brokerAccountIdentifier: "broker-account-identifier",
         symbol: "HOOD",
         side: "buy",
         quantity: 5,
         ticketId: "ticket-1",
         mockOrderId: "mock-order-1",
+        rawAudio: "audio-bytes",
+        rawAudioBlob: "blob",
+        audioData: "audio-data",
         nested: {
           accessToken: "access-token",
           refreshToken: "refresh-token",
@@ -58,12 +68,17 @@ describe("audit events", () => {
     ).toEqual({
       accountId: "[REDACTED]",
       accountNumber: "[REDACTED]",
+      accountIdentifier: "[REDACTED]",
       brokerAccountId: "[REDACTED]",
+      brokerAccountIdentifier: "[REDACTED]",
       symbol: "HOOD",
       side: "buy",
       quantity: 5,
       ticketId: "ticket-1",
       mockOrderId: "mock-order-1",
+      rawAudio: "[REDACTED]",
+      rawAudioBlob: "[REDACTED]",
+      audioData: "[REDACTED]",
       nested: {
         accessToken: "[REDACTED]",
         refreshToken: "[REDACTED]",
@@ -130,5 +145,134 @@ describe("audit events", () => {
         }
       }
     ]);
+  });
+
+  it("creates a local-only audit timeline export with redacted events", () => {
+    const event = createAuditEvent(
+      "command.received",
+      {
+        transcript: "buy 5 HOOD",
+        accountId: "acct-id",
+        rawAudio: "audio-bytes"
+      },
+      {
+        id: "audit-1",
+        now: new Date("2026-01-01T00:00:00.000Z")
+      }
+    );
+
+    const auditExport = createAuditTimelineExport([event], {
+      now: new Date("2026-01-01T00:01:00.000Z")
+    });
+
+    expect(auditExport).toEqual({
+      kind: "audit_timeline_export",
+      generatedAt: "2026-01-01T00:01:00.000Z",
+      source: "local_browser",
+      mockOnly: true,
+      liveTradingEnabled: false,
+      rawAudioIncluded: false,
+      secretFieldsRedacted: true,
+      statement: NO_LIVE_BROKER_ORDER_PLACED_STATEMENT,
+      events: [
+        {
+          id: "audit-1",
+          type: "command.received",
+          occurredAt: "2026-01-01T00:00:00.000Z",
+          actor: "system",
+          redacted: true,
+          payload: {
+            transcript: "buy 5 HOOD",
+            accountId: "[REDACTED]",
+            rawAudio: "[REDACTED]"
+          }
+        }
+      ]
+    });
+    expect(serializeAuditExport(auditExport)).toContain(
+      '"No live broker order was placed."'
+    );
+  });
+
+  it("creates a redacted mock receipt and markdown summary", () => {
+    const event = createAuditEvent(
+      "mock.execution.submitted",
+      {
+        ticketId: "ticket-1",
+        mockOrderId: "mock-order-1"
+      },
+      {
+        id: "audit-1",
+        now: new Date("2026-01-01T00:00:00.000Z")
+      }
+    );
+    const receipt = createMockTradeReceipt(
+      {
+        commandTranscript: "buy 5 HOOD",
+        parsedIntent: {
+          kind: "order_ticket",
+          accountId: "acct-id"
+        },
+        orderTicket: {
+          id: "ticket-1",
+          symbol: "HOOD",
+          brokerAccountId: "broker-account"
+        },
+        safetyReview: {
+          liveTradingEnabled: false,
+          rawAudio: "audio-bytes"
+        },
+        confirmationChallengeResult: {
+          accepted: true,
+          token: "secret-token"
+        },
+        mockBrokerResponse: {
+          status: "mock_submitted",
+          message: NO_LIVE_BROKER_ORDER_PLACED_STATEMENT
+        },
+        auditTimeline: [event]
+      },
+      {
+        now: new Date("2026-01-01T00:01:00.000Z")
+      }
+    );
+
+    expect(receipt).toMatchObject({
+      kind: "mock_trade_receipt",
+      generatedAt: "2026-01-01T00:01:00.000Z",
+      badge: "Mock Only / No Live Trading",
+      mockOnly: true,
+      liveTradingEnabled: false,
+      rawAudioIncluded: false,
+      brokerAccountIdentifiersIncluded: false,
+      secretFieldsRedacted: true,
+      statement: NO_LIVE_BROKER_ORDER_PLACED_STATEMENT,
+      commandTranscript: "buy 5 HOOD",
+      auditEvents: [
+        {
+          id: "audit-1",
+          type: "mock.execution.submitted",
+          occurredAt: "2026-01-01T00:00:00.000Z"
+        }
+      ]
+    });
+    expect(receipt.orderTicket).toMatchObject({
+      brokerAccountId: "[REDACTED]"
+    });
+    expect(receipt.safetyReview).toMatchObject({
+      rawAudio: "[REDACTED]"
+    });
+    expect(receipt.confirmationChallengeResult).toMatchObject({
+      token: "[REDACTED]"
+    });
+
+    const markdown = renderMockTradeReceiptMarkdown(receipt);
+
+    expect(markdown).toContain("Mock Only / No Live Trading");
+    expect(markdown).toContain(NO_LIVE_BROKER_ORDER_PLACED_STATEMENT);
+    expect(markdown).toContain("audit-1");
+    expect(markdown).not.toContain("broker-account");
+    expect(markdown).not.toContain("secret-token");
+    expect(markdown).not.toContain("audio-bytes");
   });
 });

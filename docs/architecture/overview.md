@@ -6,17 +6,17 @@ StreetSpeak AI is organized as a TypeScript pnpm monorepo.
 - `packages/core`: shared session, command routing, parsed-intent contracts, and mock desk orchestration.
 - `packages/orders`: equity order ticket lifecycle types, validation, and creation helpers.
 - `packages/safety`: safety reviews, explicit confirmation challenges, and generic-confirmation rejection.
-- `packages/audit`: audit event types, redaction helpers, and local in-memory sink.
-- `packages/voice`: voice transcript and provider abstraction for browser speech, local STT, and future ElevenLabs support.
+- `packages/audit`: audit event types, redaction helpers, local in-memory sink, local audit exports, and mock receipt exports.
+- `packages/voice`: voice transcript and provider abstraction for browser speech and mock/local development providers. ElevenLabs is not implemented.
 - `packages/brokers`: mock-only broker adapter, static/fake portfolio fixtures, and static/fake quote fixtures.
 
 The first scaffold is mock-only. Robinhood MCP and Public adapters are planned but not implemented. There is no live broker execution method in the current broker interface.
 
 ## v0.1 mock trading desk flow
 
-The local demo flow is intentionally in-memory and mock-only:
+The local demo flow is intentionally local-first and mock-only:
 
-1. `command.received`: typed transcript is accepted by the dashboard. Browser voice input is a visible placeholder only; raw audio is not captured or stored.
+1. `command.received`: typed transcript is accepted by the dashboard. Browser-native speech input can provide a text transcript when supported; raw audio is not stored by StreetSpeak AI or sent to a StreetSpeak server.
 2. `command.routed`: the command is routed as a portfolio question, quote question, order ticket request, unsupported command, or invalid command.
 3. Portfolio and quote questions are answered from static fake fixtures only. These are labeled `MOCK PORTFOLIO` or `MOCK STATIC QUOTE` and are not real account or market data.
 4. Share-quantity equity commands create mock order tickets for supported symbols. Every ticket goes through safety review before confirmation.
@@ -24,7 +24,7 @@ The local demo flow is intentionally in-memory and mock-only:
 6. `confirmation.accepted` or `confirmation.rejected`: exact phrase plus code is required. Generic confirmations and phrases without the code are rejected.
 7. `mock.execution.requested` and `mock.execution.submitted`: the mock broker records a fake submission and explicitly reports that no live broker order was placed.
 
-Durable local audit storage is a future task. v0.1 keeps the audit timeline local and in memory.
+The web app persists redacted audit events in browser `localStorage` only. Local controls can clear the audit timeline, export a redacted audit JSON file, copy a mock receipt Markdown summary, download receipt JSON, reset onboarding, reset transient demo state, or reset all local demo data. Receipt exports explicitly state `No live broker order was placed.` No export is uploaded or turned into a public URL.
 
 ## Supported mock commands
 

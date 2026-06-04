@@ -24,6 +24,53 @@ export interface AuditSink {
   append(event: AuditEvent): Promise<void>;
 }
 
+export interface AuditTimelineExport {
+  readonly kind: "audit_timeline_export";
+  readonly generatedAt: string;
+  readonly source: "local_browser";
+  readonly mockOnly: true;
+  readonly liveTradingEnabled: false;
+  readonly rawAudioIncluded: false;
+  readonly secretFieldsRedacted: true;
+  readonly statement: typeof NO_LIVE_BROKER_ORDER_PLACED_STATEMENT;
+  readonly events: readonly AuditEvent[];
+}
+
+export interface MockTradeReceiptInput {
+  readonly commandTranscript: string;
+  readonly parsedIntent: unknown;
+  readonly orderTicket: unknown;
+  readonly safetyReview: unknown;
+  readonly confirmationChallengeResult: unknown;
+  readonly mockBrokerResponse: unknown;
+  readonly auditTimeline: readonly AuditEvent[];
+}
+
+export interface MockTradeReceiptExport {
+  readonly kind: "mock_trade_receipt";
+  readonly generatedAt: string;
+  readonly badge: "Mock Only / No Live Trading";
+  readonly mockOnly: true;
+  readonly liveTradingEnabled: false;
+  readonly rawAudioIncluded: false;
+  readonly brokerAccountIdentifiersIncluded: false;
+  readonly secretFieldsRedacted: true;
+  readonly statement: typeof NO_LIVE_BROKER_ORDER_PLACED_STATEMENT;
+  readonly commandTranscript: string;
+  readonly parsedIntent: unknown;
+  readonly orderTicket: unknown;
+  readonly safetyReview: unknown;
+  readonly confirmationChallengeResult: unknown;
+  readonly mockBrokerResponse: unknown;
+  readonly auditEvents: readonly AuditReceiptEventRef[];
+}
+
+export interface AuditReceiptEventRef {
+  readonly id: string;
+  readonly type: AuditEventType;
+  readonly occurredAt: string;
+}
+
 export class InMemoryAuditSink implements AuditSink {
   readonly #events: AuditEvent[] = [];
 
@@ -46,9 +93,12 @@ export interface CreateAuditEventOptions {
   readonly now?: Date;
 }
 
+export const NO_LIVE_BROKER_ORDER_PLACED_STATEMENT =
+  "No live broker order was placed.";
+
 const REDACTED = "[REDACTED]";
 const REDACTED_KEY_PATTERN =
-  /^(accountId|accountNumber|brokerAccountId|accessToken|refreshToken|sessionToken|privateKey|authorization|password|secret|credential|token|api[_-]?key)$/i;
+  /^(accountId|accountNumber|accountIdentifier|brokerAccountId|brokerAccountIdentifier|rawAudio|rawAudioBlob|audioData|accessToken|refreshToken|sessionToken|privateKey|authorization|password|secret|credential|token|api[_-]?key)$/i;
 
 export function createAuditEvent(
   type: AuditEventType,
@@ -74,6 +124,106 @@ export function redactAuditPayload(
   return redactValue(payload) as Record<string, unknown>;
 }
 
+export function createAuditTimelineExport(
+  events: readonly AuditEvent[],
+  options: { readonly now?: Date } = {}
+): AuditTimelineExport {
+  return {
+    kind: "audit_timeline_export",
+    generatedAt: (options.now ?? new Date()).toISOString(),
+    source: "local_browser",
+    mockOnly: true,
+    liveTradingEnabled: false,
+    rawAudioIncluded: false,
+    secretFieldsRedacted: true,
+    statement: NO_LIVE_BROKER_ORDER_PLACED_STATEMENT,
+    events: events.map(redactAuditEvent)
+  };
+}
+
+export function createMockTradeReceipt(
+  input: MockTradeReceiptInput,
+  options: { readonly now?: Date } = {}
+): MockTradeReceiptExport {
+  return {
+    kind: "mock_trade_receipt",
+    generatedAt: (options.now ?? new Date()).toISOString(),
+    badge: "Mock Only / No Live Trading",
+    mockOnly: true,
+    liveTradingEnabled: false,
+    rawAudioIncluded: false,
+    brokerAccountIdentifiersIncluded: false,
+    secretFieldsRedacted: true,
+    statement: NO_LIVE_BROKER_ORDER_PLACED_STATEMENT,
+    commandTranscript: input.commandTranscript,
+    parsedIntent: redactReceiptValue(input.parsedIntent),
+    orderTicket: redactReceiptValue(input.orderTicket),
+    safetyReview: redactReceiptValue(input.safetyReview),
+    confirmationChallengeResult: redactReceiptValue(
+      input.confirmationChallengeResult
+    ),
+    mockBrokerResponse: redactReceiptValue(input.mockBrokerResponse),
+    auditEvents: input.auditTimeline.map((event) => ({
+      id: event.id,
+      type: event.type,
+      occurredAt: event.occurredAt
+    }))
+  };
+}
+
+export function renderMockTradeReceiptMarkdown(
+  receipt: MockTradeReceiptExport
+): string {
+  const auditEvents = receipt.auditEvents
+    .map((event) => `- ${event.occurredAt} ${event.type} (${event.id})`)
+    .join("\n");
+
+  return [
+    "# StreetSpeak AI Mock Trade Receipt",
+    "",
+    `**${receipt.badge}**`,
+    "",
+    receipt.statement,
+    "",
+    "## Command Transcript",
+    "",
+    receipt.commandTranscript || "(empty)",
+    "",
+    "## Parsed Intent",
+    "",
+    toMarkdownJsonBlock(receipt.parsedIntent),
+    "",
+    "## Order Ticket",
+    "",
+    toMarkdownJsonBlock(receipt.orderTicket),
+    "",
+    "## Safety Review",
+    "",
+    toMarkdownJsonBlock(receipt.safetyReview),
+    "",
+    "## Confirmation Challenge Result",
+    "",
+    toMarkdownJsonBlock(receipt.confirmationChallengeResult),
+    "",
+    "## Mock Broker Response",
+    "",
+    toMarkdownJsonBlock(receipt.mockBrokerResponse),
+    "",
+    "## Audit Events",
+    "",
+    auditEvents || "(none)",
+    "",
+    "Raw audio included: false",
+    "Live trading enabled: false"
+  ].join("\n");
+}
+
+export function serializeAuditExport(
+  exportPayload: AuditTimelineExport | MockTradeReceiptExport
+): string {
+  return `${JSON.stringify(exportPayload, null, 2)}\n`;
+}
+
 function redactValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map((item) => redactValue(item));
@@ -93,6 +243,22 @@ function redactValue(value: unknown): unknown {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function redactAuditEvent(event: AuditEvent): AuditEvent {
+  return {
+    ...event,
+    redacted: true,
+    payload: redactAuditPayload(event.payload)
+  };
+}
+
+function redactReceiptValue(value: unknown): unknown {
+  return redactValue(value);
+}
+
+function toMarkdownJsonBlock(value: unknown): string {
+  return ["```json", JSON.stringify(value ?? null, null, 2), "```"].join("\n");
 }
 
 function createMockId(prefix: string): string {

@@ -9,7 +9,8 @@ The initial security model is conservative:
 - No trade recommendations.
 - Mock mode is the default.
 - First-run onboarding is required before the local demo flow opens.
-- Onboarding acknowledgement and demo settings are stored only in browser local storage.
+- Onboarding acknowledgement, demo settings, and redacted audit events are stored only in browser local storage.
+- Audit and receipt exports are generated locally and are not uploaded or turned into public URLs.
 - Browser-native voice input is optional and feature-detected.
 - Browser voice transcripts flow into the same mock parser as typed commands.
 - Raw audio is not stored and is not uploaded to a StreetSpeak server.
@@ -18,4 +19,4 @@ The initial security model is conservative:
 - Audit event payloads redact common secret-like fields before storage.
 - Broker adapters expose mock review and mock submission only.
 
-Future broker phases should start read-only, require explicit opt-in, and keep confirmation and audit logic separate from adapter implementation.
+Future broker phases should start read-only, require explicit opt-in, and keep confirmation and audit logic separate from adapter implementation. No future broker work should store broker secrets in plaintext, log raw account IDs, skip order review before live execution, or allow generic confirmation phrases.

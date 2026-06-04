@@ -1,4 +1,12 @@
 import {
+  createAuditTimelineExport,
+  createMockTradeReceipt,
+  renderMockTradeReceiptMarkdown,
+  serializeAuditExport,
+  type AuditEvent,
+  type MockTradeReceiptExport
+} from "@streetspeak-ai/audit";
+import {
   createMockSession,
   createMockTradingDeskTurn,
   submitMockTradingDeskConfirmation,
@@ -12,11 +20,16 @@ import {
   type BrowserVoiceState
 } from "./browser-speech";
 import {
+  appendAuditEvents,
+  clearAuditTimeline,
+  exportAuditTimeline,
   getBrowserLocalStorage,
   getDemoSafetyFlags,
   hasAcceptedOnboarding,
+  loadAuditTimeline,
   loadDemoSettings,
   REQUIRED_ONBOARDING_ACKNOWLEDGEMENTS,
+  resetAllDemoData,
   resetDemoState,
   resetOnboardingAcceptance,
   saveDemoSettings,
@@ -45,9 +58,12 @@ if (app) {
     typeof window === "undefined" ? null : (window as BrowserSpeechHost);
   let currentState: MockTradingDeskState | null = null;
   let settings = loadDemoSettings(storage);
+  let persistedAuditTimeline = loadAuditTimeline(storage);
   let onboardingAccepted = hasAcceptedOnboarding(storage);
   let onboardingChecks = new Set<OnboardingAcknowledgementId>();
   let busy = false;
+  let exportStatusMessage = "";
+  let receiptMarkdownPreview = "";
   let voiceState = createInitialBrowserVoiceState(
     browserHost,
     settings.browserVoiceInputEnabled
@@ -73,6 +89,9 @@ if (app) {
       onboardingAccepted,
       onboardingChecks,
       settings,
+      persistedAuditTimeline,
+      exportStatusMessage,
+      receiptMarkdownPreview,
       storageAvailable: storage !== null,
       voiceState
     });
@@ -94,6 +113,12 @@ if (app) {
       session,
       source
     });
+    persistedAuditTimeline = appendAuditEvents(
+      storage,
+      currentState.auditTimeline
+    );
+    exportStatusMessage = "Redacted audit events saved to this browser.";
+    receiptMarkdownPreview = "";
     busy = false;
     render();
   };
@@ -111,6 +136,12 @@ if (app) {
       currentState,
       confirmationText
     );
+    persistedAuditTimeline = appendAuditEvents(
+      storage,
+      currentState.auditTimeline
+    );
+    exportStatusMessage = "Redacted audit events saved to this browser.";
+    receiptMarkdownPreview = "";
     busy = false;
     render();
   };
@@ -120,7 +151,90 @@ if (app) {
     voiceController.setEnabled(settings.browserVoiceInputEnabled);
     voiceState = voiceController.state;
     currentState = null;
+    receiptMarkdownPreview = "";
+    exportStatusMessage = "Transient demo fields were reset.";
     busy = false;
+    render();
+  };
+
+  const clearLocalAuditTimeline = (): void => {
+    persistedAuditTimeline = clearAuditTimeline(storage);
+    exportStatusMessage = "Local audit timeline cleared from this browser.";
+    render();
+  };
+
+  const resetEveryLocalDemoValue = (): void => {
+    resetAllDemoData(storage);
+    settings = loadDemoSettings(storage);
+    onboardingAccepted = false;
+    onboardingChecks = new Set();
+    persistedAuditTimeline = loadAuditTimeline(storage);
+    currentState = null;
+    receiptMarkdownPreview = "";
+    exportStatusMessage =
+      "All local demo data was reset in this browser, including onboarding, settings, and audit events.";
+    voiceController.setEnabled(settings.browserVoiceInputEnabled);
+    voiceState = voiceController.state;
+    busy = false;
+    render();
+  };
+
+  const copyReceiptMarkdown = async (): Promise<void> => {
+    const receipt = createReceiptForCurrentState(currentState);
+
+    if (!receipt) {
+      exportStatusMessage =
+        "Complete an exact-code mock submission before exporting a trade receipt.";
+      render();
+      return;
+    }
+
+    const markdown = renderMockTradeReceiptMarkdown(receipt);
+    receiptMarkdownPreview = markdown;
+
+    if (!navigator.clipboard) {
+      exportStatusMessage =
+        "Receipt Markdown is shown below. Clipboard access is unavailable in this browser.";
+      render();
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(markdown);
+      exportStatusMessage =
+        "Receipt Markdown copied locally. No upload or public URL was created.";
+    } catch {
+      exportStatusMessage =
+        "Receipt Markdown is shown below. This browser blocked clipboard access.";
+    }
+    render();
+  };
+
+  const downloadReceiptJson = (): void => {
+    const receipt = createReceiptForCurrentState(currentState);
+
+    if (!receipt) {
+      exportStatusMessage =
+        "Complete an exact-code mock submission before exporting a trade receipt.";
+      render();
+      return;
+    }
+
+    receiptMarkdownPreview = renderMockTradeReceiptMarkdown(receipt);
+    downloadJsonFile("streetspeak-ai-mock-receipt.json", receipt);
+    exportStatusMessage =
+      "Receipt JSON downloaded locally. No upload or public URL was created.";
+    render();
+  };
+
+  const downloadAuditJson = (): void => {
+    const auditExport = storage
+      ? exportAuditTimeline(storage)
+      : createAuditTimelineExport(persistedAuditTimeline);
+
+    downloadJsonFile("streetspeak-ai-audit-timeline.json", auditExport);
+    exportStatusMessage =
+      "Audit timeline JSON downloaded locally from this browser.";
     render();
   };
 
@@ -172,6 +286,21 @@ if (app) {
       app.querySelector<HTMLButtonElement>("#reset-demo-state");
     const resetOnboardingButton = app.querySelector<HTMLButtonElement>(
       "#reset-onboarding-acknowledgement"
+    );
+    const clearAuditButton = app.querySelector<HTMLButtonElement>(
+      "#clear-audit-timeline"
+    );
+    const copyReceiptButton = app.querySelector<HTMLButtonElement>(
+      "#copy-receipt-markdown"
+    );
+    const downloadReceiptButton = app.querySelector<HTMLButtonElement>(
+      "#download-receipt-json"
+    );
+    const downloadAuditButton = app.querySelector<HTMLButtonElement>(
+      "#download-audit-json"
+    );
+    const resetAllDemoDataButton = app.querySelector<HTMLButtonElement>(
+      "#reset-all-demo-data"
     );
 
     commandForm?.addEventListener("submit", (event) => {
@@ -234,6 +363,18 @@ if (app) {
       onboardingChecks = new Set();
       render();
     });
+
+    clearAuditButton?.addEventListener("click", clearLocalAuditTimeline);
+
+    copyReceiptButton?.addEventListener("click", () => {
+      void copyReceiptMarkdown();
+    });
+
+    downloadReceiptButton?.addEventListener("click", downloadReceiptJson);
+
+    downloadAuditButton?.addEventListener("click", downloadAuditJson);
+
+    resetAllDemoDataButton?.addEventListener("click", resetEveryLocalDemoValue);
   };
 
   render();
@@ -249,6 +390,9 @@ interface MarkupOptions {
   readonly onboardingAccepted: boolean;
   readonly onboardingChecks: ReadonlySet<OnboardingAcknowledgementId>;
   readonly settings: DemoSettings;
+  readonly persistedAuditTimeline: readonly AuditEvent[];
+  readonly exportStatusMessage: string;
+  readonly receiptMarkdownPreview: string;
   readonly storageAvailable: boolean;
   readonly voiceState: BrowserVoiceState;
 }
@@ -260,6 +404,9 @@ function createMarkup(options: MarkupOptions): string {
     onboardingAccepted,
     onboardingChecks,
     settings,
+    persistedAuditTimeline,
+    exportStatusMessage,
+    receiptMarkdownPreview,
     storageAvailable,
     voiceState
   } = options;
@@ -285,7 +432,7 @@ function createMarkup(options: MarkupOptions): string {
 
       <section class="warning-band">
         <strong>No live broker execution.</strong>
-        This local demo uses static mock quotes, a fake portfolio, exact confirmation challenges, and an in-memory audit timeline. It is not investment advice.
+        This local demo uses static mock quotes, a fake portfolio, exact confirmation challenges, and a redacted audit timeline stored only in this browser. It is not investment advice.
       </section>
 
       ${renderSettings(settings, storageAvailable)}
@@ -376,12 +523,20 @@ function createMarkup(options: MarkupOptions): string {
           ${renderBrokerResponse(state)}
         </section>
 
+        <section class="panel panel-span" aria-label="local exports and receipts">
+          <div class="panel-heading">
+            <h2>Receipts And Local Exports</h2>
+            <span class="badge badge-danger">Mock Only / No Live Trading</span>
+          </div>
+          ${renderExportPanel(state, persistedAuditTimeline, exportStatusMessage, receiptMarkdownPreview, storageAvailable)}
+        </section>
+
         <section class="panel" aria-label="audit timeline">
           <div class="panel-heading">
             <h2>Audit Timeline</h2>
-            <span class="muted">local memory</span>
+            <span class="muted">local browser storage</span>
           </div>
-          ${settings.showAuditTimeline ? renderAuditTimeline(state) : `<p class="empty">Audit timeline is hidden by local settings.</p>`}
+          ${settings.showAuditTimeline ? renderAuditTimeline(persistedAuditTimeline) : `<p class="empty">Audit timeline is hidden by local settings.</p>`}
         </section>
       </section>
     </main>
@@ -452,7 +607,7 @@ function renderVoiceInput(
         <button id="stop-browser-voice-button" type="button" class="secondary-button" ${canStop ? "" : "disabled"}>Stop</button>
       </div>
       <p class="voice-note">${escapeHtml(voiceState.message)}</p>
-      <p class="voice-note">Browser-native speech behavior depends on the browser and device. StreetSpeak AI does not store raw audio or upload raw audio to a StreetSpeak server.</p>
+      <p class="voice-note">Browser-native speech behavior depends on the browser and device. StreetSpeak AI does not store raw audio or send raw audio to a StreetSpeak server.</p>
       ${
         voiceState.lastTranscript
           ? `<p class="transcript">Transcript: ${escapeHtml(voiceState.lastTranscript)}</p>`
@@ -727,7 +882,7 @@ function renderConfirmation(
     </form>
     ${
       state?.confirmation && !state.confirmation.accepted
-        ? `<p class="rejected">Rejected: ${escapeHtml(state.confirmation.reason)}</p>`
+        ? `<p class="rejected">${escapeHtml(formatConfirmationRejection(state.confirmation.reason))}</p>`
         : ""
     }
     ${busy ? `<p class="muted">Processing...</p>` : ""}
@@ -752,11 +907,46 @@ function renderBrokerResponse(state: MockTradingDeskState | null): string {
   `;
 }
 
-function renderAuditTimeline(state: MockTradingDeskState | null): string {
-  const events = state?.auditTimeline ?? [];
+function renderExportPanel(
+  state: MockTradingDeskState | null,
+  auditTimeline: readonly AuditEvent[],
+  exportStatusMessage: string,
+  receiptMarkdownPreview: string,
+  storageAvailable: boolean
+): string {
+  const receiptDisabled = state?.status === "mock_submitted" ? "" : "disabled";
+  const auditDisabled = auditTimeline.length > 0 ? "" : "disabled";
 
+  return `
+    <p class="empty">Exports are created locally from redacted browser data. They are not uploaded, shared, or turned into public URLs.</p>
+    <dl class="detail-list export-status">
+      <div><dt>Storage</dt><dd>${storageAvailable ? "local browser only" : "unavailable"}</dd></div>
+      <div><dt>Audit events</dt><dd>${auditTimeline.length}</dd></div>
+      <div><dt>Receipt statement</dt><dd>No live broker order was placed.</dd></div>
+    </dl>
+    <div class="settings-actions export-actions">
+      <button id="copy-receipt-markdown" type="button" class="primary-button" ${receiptDisabled}>Copy receipt Markdown</button>
+      <button id="download-receipt-json" type="button" class="secondary-button" ${receiptDisabled}>Download receipt JSON</button>
+      <button id="download-audit-json" type="button" class="secondary-button" ${auditDisabled}>Download audit JSON</button>
+      <button id="clear-audit-timeline" type="button" class="secondary-button" ${auditDisabled}>Clear audit timeline</button>
+      <button id="reset-all-demo-data" type="button" class="secondary-button">Reset all local demo data</button>
+    </div>
+    ${
+      exportStatusMessage
+        ? `<p class="accepted">${escapeHtml(exportStatusMessage)}</p>`
+        : ""
+    }
+    ${
+      receiptMarkdownPreview
+        ? `<textarea class="export-preview" readonly rows="10" aria-label="receipt markdown preview">${escapeHtml(receiptMarkdownPreview)}</textarea>`
+        : `<p class="empty">Run a command to create a local receipt preview.</p>`
+    }
+  `;
+}
+
+function renderAuditTimeline(events: readonly AuditEvent[]): string {
   if (events.length === 0) {
-    return `<p class="empty">No local audit events yet.</p>`;
+    return `<p class="empty">No local audit events yet. Run a mock command to save redacted events in this browser.</p>`;
   }
 
   return `
@@ -794,6 +984,64 @@ function renderList(
       </ul>
     </div>
   `;
+}
+
+function createReceiptForCurrentState(
+  state: MockTradingDeskState | null
+): MockTradeReceiptExport | null {
+  if (!state || state.status !== "mock_submitted") {
+    return null;
+  }
+
+  return createMockTradeReceipt({
+    commandTranscript: state.command.transcript,
+    parsedIntent: {
+      route: state.route,
+      parse: state.parse
+    },
+    orderTicket: state.ticket ?? null,
+    safetyReview: state.safetyReview ?? null,
+    confirmationChallengeResult: state.challenge
+      ? {
+          challenge: state.challenge,
+          evaluation: state.confirmation ?? null
+        }
+      : null,
+    mockBrokerResponse: state.brokerResponse ?? null,
+    auditTimeline: state.auditTimeline
+  });
+}
+
+function downloadJsonFile(
+  filename: string,
+  payload: MockTradeReceiptExport | ReturnType<typeof exportAuditTimeline>
+): void {
+  const blob = new Blob([serializeAuditExport(payload)], {
+    type: "application/json"
+  });
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = objectUrl;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
+function formatConfirmationRejection(reason: string): string {
+  if (reason === "generic_confirmation") {
+    return "Generic confirmations such as yes, do it, confirmed, send it, execute, looks good, or okay never submit an order. Type the exact challenge phrase and unique code for a mock-only submission.";
+  }
+
+  if (reason === "phrase_mismatch") {
+    return "Confirmation rejected. The full challenge phrase and unique code must match exactly before mock submission.";
+  }
+
+  if (reason === "challenge_expired") {
+    return "Confirmation rejected. The challenge expired; run the mock order command again to create a new code.";
+  }
+
+  return "Confirmation rejected. Mock submission requires the exact challenge phrase and unique code.";
 }
 
 function formatCurrency(value: number): string {

@@ -1,10 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  createAuditEvent,
+  NO_LIVE_BROKER_ORDER_PLACED_STATEMENT
+} from "@streetspeak-ai/audit";
+import {
+  appendAuditEvent,
+  appendAuditEvents,
+  clearAuditTimeline,
   DEFAULT_DEMO_SETTINGS,
+  exportAuditTimeline,
   getDemoSafetyFlags,
   hasAcceptedOnboarding,
+  loadAuditTimeline,
   loadDemoSettings,
   loadOnboardingAcceptance,
+  resetAllDemoData,
   resetDemoState,
   resetOnboardingAcceptance,
   saveDemoSettings,
@@ -24,6 +34,10 @@ class MemoryStorage {
 
   removeItem(key: string): void {
     this.#items.delete(key);
+  }
+
+  has(key: string): boolean {
+    return this.#items.has(key);
   }
 }
 
@@ -97,5 +111,125 @@ describe("local demo state", () => {
       liveTradingEnabled: false,
       liveTradingAvailable: false
     });
+  });
+
+  it("persists redacted audit events in local browser storage", () => {
+    const storage = new MemoryStorage();
+    const event = createAuditEvent(
+      "command.received",
+      {
+        transcript: "buy 5 HOOD",
+        accountId: "acct-id",
+        rawAudio: "audio-bytes"
+      },
+      {
+        id: "audit-1",
+        now: new Date("2026-01-01T00:00:00.000Z")
+      }
+    );
+
+    expect(appendAuditEvent(storage, event)).toEqual([
+      {
+        id: "audit-1",
+        type: "command.received",
+        occurredAt: "2026-01-01T00:00:00.000Z",
+        actor: "system",
+        redacted: true,
+        payload: {
+          transcript: "buy 5 HOOD",
+          accountId: "[REDACTED]",
+          rawAudio: "[REDACTED]"
+        }
+      }
+    ]);
+    expect(loadAuditTimeline(storage)).toHaveLength(1);
+  });
+
+  it("appends audit events without duplicating existing event ids", () => {
+    const storage = new MemoryStorage();
+    const event = createAuditEvent(
+      "command.routed",
+      { intent: "unknown" },
+      {
+        id: "audit-1"
+      }
+    );
+
+    appendAuditEvents(storage, [event]);
+    appendAuditEvents(storage, [event]);
+
+    expect(loadAuditTimeline(storage)).toHaveLength(1);
+  });
+
+  it("clears and exports the local audit timeline", () => {
+    const storage = new MemoryStorage();
+
+    appendAuditEvent(
+      storage,
+      createAuditEvent(
+        "safety.reviewed",
+        { liveTradingEnabled: false },
+        {
+          id: "audit-1",
+          now: new Date("2026-01-01T00:00:00.000Z")
+        }
+      )
+    );
+
+    expect(
+      exportAuditTimeline(storage, {
+        now: new Date("2026-01-01T00:01:00.000Z")
+      })
+    ).toEqual({
+      kind: "audit_timeline_export",
+      generatedAt: "2026-01-01T00:01:00.000Z",
+      source: "local_browser",
+      mockOnly: true,
+      liveTradingEnabled: false,
+      rawAudioIncluded: false,
+      secretFieldsRedacted: true,
+      statement: NO_LIVE_BROKER_ORDER_PLACED_STATEMENT,
+      events: [
+        {
+          id: "audit-1",
+          type: "safety.reviewed",
+          occurredAt: "2026-01-01T00:00:00.000Z",
+          actor: "system",
+          redacted: true,
+          payload: {
+            liveTradingEnabled: false
+          }
+        }
+      ]
+    });
+
+    clearAuditTimeline(storage);
+
+    expect(loadAuditTimeline(storage)).toEqual([]);
+  });
+
+  it("resets all local demo data including onboarding, settings, and audit", () => {
+    const storage = new MemoryStorage();
+
+    saveOnboardingAcceptance(storage);
+    saveDemoSettings(storage, {
+      browserVoiceInputEnabled: false,
+      showAuditTimeline: false
+    });
+    storage.setItem("streetspeak-ai:last-command:v1", "buy 5 HOOD");
+    appendAuditEvent(
+      storage,
+      createAuditEvent("command.received", { transcript: "buy 5 HOOD" })
+    );
+
+    expect(resetAllDemoData(storage)).toEqual({
+      commandText: "",
+      confirmationText: "",
+      lastVoiceTranscript: ""
+    });
+    expect(hasAcceptedOnboarding(storage)).toBe(false);
+    expect(loadDemoSettings(storage)).toEqual(DEFAULT_DEMO_SETTINGS);
+    expect(loadAuditTimeline(storage)).toEqual([]);
+    expect(storage.has("streetspeak-ai:last-command:v1")).toBe(false);
   });
 });
