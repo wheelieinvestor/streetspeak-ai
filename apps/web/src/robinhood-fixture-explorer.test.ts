@@ -141,6 +141,7 @@ describe("Robinhood fixture explorer model", () => {
           name: "Robinhood Markets Inc.",
           assetClass: "equity",
           tradableInFixture: true,
+          tradable: true,
           source: "fixture_static"
         }
       ]

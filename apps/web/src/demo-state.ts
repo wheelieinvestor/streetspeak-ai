@@ -111,7 +111,8 @@ const AUDIT_EVENT_TYPES: readonly AuditEventType[] = [
   "confirmation.accepted",
   "confirmation.rejected",
   "mock.execution.requested",
-  "mock.execution.submitted"
+  "mock.execution.submitted",
+  "robinhood.read_only.action"
 ];
 
 const AUDIT_EVENT_ACTORS: readonly AuditEventActor[] = [

@@ -7,9 +7,20 @@ export type AuditEventType =
   | "confirmation.accepted"
   | "confirmation.rejected"
   | "mock.execution.requested"
-  | "mock.execution.submitted";
+  | "mock.execution.submitted"
+  | "robinhood.read_only.action";
 
 export type AuditEventActor = "user" | "system" | "mock_broker";
+
+export type RobinhoodReadOnlyAuditAction =
+  | "status_checked"
+  | "accounts_read"
+  | "portfolio_read"
+  | "positions_read"
+  | "quote_read"
+  | "order_history_read"
+  | "tradability_read"
+  | "search_read";
 
 export interface AuditEvent {
   readonly id: string;
@@ -98,7 +109,7 @@ export const NO_LIVE_BROKER_ORDER_PLACED_STATEMENT =
 
 const REDACTED = "[REDACTED]";
 const REDACTED_KEY_PATTERN =
-  /^(accountId|accountNumber|accountIdentifier|brokerAccountId|brokerAccountIdentifier|rawAudio|rawAudioBlob|audioData|accessToken|refreshToken|sessionToken|privateKey|authorization|password|secret|credential|token|api[_-]?key)$/i;
+  /^(account|accountId|accountNumber|accountIdentifier|brokerAccountId|brokerAccountIdentifier|orderId|orderIds|brokerOrderId|brokerOrderIdentifier|rawOrderId|rawOrderIdentifier|portfolio|portfolioValue|portfolioValues|totalEquityValue|buyingPower|cashAvailable|holdings|positions|rawAudio|rawAudioBlob|audioData|accessToken|refreshToken|sessionToken|privateKey|authorization|password|secret|credential|token|api[_-]?key)$/i;
 
 export function createAuditEvent(
   type: AuditEventType,
@@ -116,6 +127,13 @@ export function createAuditEvent(
     redacted: true,
     payload: redactAuditPayload(payload)
   };
+}
+
+export function createRobinhoodReadOnlyAuditEvent(
+  action: RobinhoodReadOnlyAuditAction,
+  options: CreateAuditEventOptions | Date = {}
+): AuditEvent {
+  return createAuditEvent("robinhood.read_only.action", { action }, options);
 }
 
 export function redactAuditPayload(

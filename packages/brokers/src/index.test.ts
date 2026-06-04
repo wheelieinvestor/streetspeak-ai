@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { createEquityOrderTicket } from "@streetspeak-ai/orders";
 import {
+  callRobinhoodMcpReadOnlyTool,
   createMockBrokerAdapter,
+  createRobinhoodMcpReadOnlyAdapter,
   createRobinhoodReadOnlyAdapter,
   createRobinhoodReadOnlyFixtureAdapter,
   formatMockPortfolio,
   getMockPortfolio,
   getMockQuote,
-  type BrokerReadResult
+  ROBINHOOD_MCP_BLOCKED_TOOLS,
+  ROBINHOOD_MCP_READ_ONLY_TOOL_ALLOWLIST,
+  type BrokerReadResult,
+  type RobinhoodMcpReadOnlyClient,
+  type RobinhoodMcpReadOnlyToolName
 } from "./index.js";
 
 describe("broker adapters", () => {
@@ -153,6 +159,268 @@ describe("broker adapters", () => {
     });
   });
 
+  it("pins the Robinhood MCP read-only tool allowlist and blocks mutation tools", async () => {
+    const calls: RobinhoodMcpReadOnlyToolName[] = [];
+    const client: RobinhoodMcpReadOnlyClient = {
+      async callTool(toolName) {
+        calls.push(toolName);
+        return {};
+      }
+    };
+
+    expect(ROBINHOOD_MCP_READ_ONLY_TOOL_ALLOWLIST).toEqual([
+      "get_accounts",
+      "get_portfolio",
+      "get_equity_positions",
+      "get_equity_quotes",
+      "get_equity_orders",
+      "get_equity_tradability",
+      "search"
+    ]);
+    expect(ROBINHOOD_MCP_BLOCKED_TOOLS).toEqual([
+      "review_equity_order",
+      "place_equity_order",
+      "cancel_equity_order"
+    ]);
+
+    await expect(
+      callRobinhoodMcpReadOnlyTool(client, "review_equity_order", {})
+    ).rejects.toThrow("blocked");
+    await expect(
+      callRobinhoodMcpReadOnlyTool(client, "place_equity_order", {})
+    ).rejects.toThrow("blocked");
+    await expect(
+      callRobinhoodMcpReadOnlyTool(client, "cancel_equity_order", {})
+    ).rejects.toThrow("blocked");
+    expect(calls).toEqual([]);
+
+    await expect(
+      callRobinhoodMcpReadOnlyTool(client, "get_accounts", {})
+    ).resolves.toEqual({});
+    expect(calls).toEqual(["get_accounts"]);
+  });
+
+  it("normalizes Robinhood MCP read-only data without exposing raw account or order identifiers", async () => {
+    const calls: readonly RobinhoodMcpReadOnlyToolName[] = [];
+    const calledTools: RobinhoodMcpReadOnlyToolName[] = [];
+    const client: RobinhoodMcpReadOnlyClient = {
+      async callTool(toolName) {
+        calledTools.push(toolName);
+
+        switch (toolName) {
+          case "get_accounts":
+            return {
+              accounts: [
+                {
+                  accountId: "raw-identifier-from-client-not-returned",
+                  accountNumber: "raw-number-from-client-not-returned",
+                  account_type: "individual",
+                  status: "active",
+                  updated_at: "2026-01-01T00:00:00.000Z"
+                }
+              ]
+            };
+          case "get_portfolio":
+            return {
+              portfolio: {
+                account: "raw-account-reference-from-client-not-returned",
+                total_equity_value: "1000.50",
+                buying_power: "250.25",
+                cash_available: "125.00",
+                updated_at: "2026-01-01T00:01:00.000Z"
+              }
+            };
+          case "get_equity_positions":
+            return {
+              positions: [
+                {
+                  account_id: "raw-identifier-from-client-not-returned",
+                  symbol: "HOOD",
+                  quantity: "2",
+                  average_cost: "10",
+                  market_value: "44.96",
+                  updated_at: "2026-01-01T00:02:00.000Z"
+                }
+              ]
+            };
+          case "get_equity_quotes":
+            return {
+              quotes: [
+                {
+                  symbol: "HOOD",
+                  last_price: "22.48",
+                  bid_price: "22.46",
+                  ask_price: "22.50",
+                  updated_at: "2026-01-01T00:03:00.000Z"
+                }
+              ]
+            };
+          case "get_equity_orders":
+            return {
+              orders: [
+                {
+                  id: "raw-order-reference-from-client-not-returned",
+                  symbol: "HOOD",
+                  side: "buy",
+                  quantity: "2",
+                  type: "market",
+                  status: "filled",
+                  submitted_at: "2026-01-01T00:04:00.000Z",
+                  average_fill_price: "22.48"
+                }
+              ]
+            };
+          case "get_equity_tradability":
+            return {
+              tradability: {
+                symbol: "HOOD",
+                tradable: true,
+                updated_at: "2026-01-01T00:05:00.000Z"
+              }
+            };
+          case "search":
+            return {
+              results: [
+                {
+                  symbol: "HOOD",
+                  name: "Robinhood Markets Inc.",
+                  tradable: true
+                }
+              ]
+            };
+        }
+
+        return {};
+      }
+    };
+    const adapter = createRobinhoodMcpReadOnlyAdapter({
+      client,
+      now: () => new Date("2026-01-01T00:06:00.000Z")
+    });
+
+    expect(adapter.getStatus()).toMatchObject({
+      state: "available",
+      transport: "externally_managed_mcp",
+      credentialsManagement: "externally_managed",
+      credentialsStoredByStreetSpeak: false,
+      rawAccountIdentifiersExposed: false,
+      liveExecutionAvailable: false,
+      orderReviewAvailable: false,
+      orderPlacementAvailable: false,
+      cancelOrderAvailable: false
+    });
+    expect(adapter.getCapabilities().supportedOrderTypes).toEqual([]);
+    expect(adapter.getCapabilities().capabilities).not.toContain(
+      "review_order"
+    );
+    expect(adapter.getCapabilities().capabilities).not.toContain(
+      "submit_mock_order"
+    );
+
+    const accounts = unwrap(await adapter.getAccounts());
+    expect(accounts).toEqual([
+      expect.objectContaining({
+        accountLabel: "Robinhood account 1 (identifier redacted)",
+        accountType: "individual",
+        status: "active",
+        source: "robinhood_mcp_read_only",
+        accountIdentifierRedacted: true
+      })
+    ]);
+
+    const portfolio = unwrap(await adapter.getPortfolioSnapshot());
+    expect(portfolio).toMatchObject({
+      accountLabel: "Robinhood portfolio (account identifier redacted)",
+      totalEquityValue: 1000.5,
+      accountIdentifierRedacted: true,
+      source: "robinhood_mcp_read_only",
+      buyingPower: {
+        cashAvailable: 125,
+        buyingPower: 250.25,
+        source: "robinhood_mcp_read_only"
+      }
+    });
+
+    const positions = unwrap(await adapter.getPositions());
+    expect(positions).toEqual([
+      expect.objectContaining({
+        symbol: "HOOD",
+        quantity: 2,
+        averageCost: 10,
+        marketValue: 44.96,
+        source: "robinhood_mcp_read_only"
+      })
+    ]);
+
+    const quote = unwrap(await adapter.getEquityQuote("hood"));
+    expect(quote).toMatchObject({
+      symbol: "HOOD",
+      last: 22.48,
+      bid: 22.46,
+      ask: 22.5,
+      source: "robinhood_mcp_read_only"
+    });
+
+    const orders = unwrap(await adapter.getOrderHistory());
+    expect(orders).toEqual([
+      expect.objectContaining({
+        id: "redacted-order-1",
+        symbol: "HOOD",
+        side: "buy",
+        quantity: 2,
+        averageFillPrice: 22.48,
+        rawOrderIdentifierRedacted: true,
+        source: "robinhood_mcp_read_only"
+      })
+    ]);
+
+    const tradability = unwrap(await adapter.getTradability("HOOD"));
+    expect(tradability).toMatchObject({
+      symbol: "HOOD",
+      tradable: true,
+      reason: "mcp_tradable",
+      source: "robinhood_mcp_read_only"
+    });
+
+    const searchResults = unwrap(await adapter.searchSymbols("hood"));
+    expect(searchResults).toEqual([
+      {
+        symbol: "HOOD",
+        name: "Robinhood Markets Inc.",
+        assetClass: "equity",
+        tradable: true,
+        source: "robinhood_mcp_read_only"
+      }
+    ]);
+
+    const normalizedJson = JSON.stringify({
+      accounts,
+      portfolio,
+      positions,
+      quote,
+      orders,
+      tradability,
+      searchResults
+    });
+    expect(normalizedJson).not.toContain(
+      "raw-identifier-from-client-not-returned"
+    );
+    expect(normalizedJson).not.toContain("raw-number-from-client-not-returned");
+    expect(normalizedJson).not.toContain(
+      "raw-order-reference-from-client-not-returned"
+    );
+    expect(calledTools).toEqual([
+      ...calls,
+      "get_accounts",
+      "get_portfolio",
+      "get_equity_positions",
+      "get_equity_quotes",
+      "get_equity_orders",
+      "get_equity_tradability",
+      "search"
+    ]);
+  });
+
   it("exposes no order review, placement, staging, or cancel methods on the Robinhood read-only scaffold", () => {
     const adapter = createRobinhoodReadOnlyFixtureAdapter();
     const maybeActionAdapter = adapter as unknown as Record<string, unknown>;
@@ -254,6 +522,7 @@ describe("broker adapters", () => {
         name: "Robinhood Markets Inc.",
         assetClass: "equity",
         tradableInFixture: true,
+        tradable: true,
         source: "fixture_static"
       }
     ]);

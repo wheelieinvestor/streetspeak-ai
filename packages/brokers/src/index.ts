@@ -12,7 +12,14 @@ export type BrokerCapabilityScope =
   | "future_order_review"
   | "future_live_execution";
 export type BrokerAssetClass = "equity";
-export type BrokerDataSource = "mock_static" | "fixture_static";
+export type BrokerDataSource =
+  | "mock_static"
+  | "fixture_static"
+  | "robinhood_mcp_read_only";
+export type RobinhoodReadOnlyDataSource = Extract<
+  BrokerDataSource,
+  "fixture_static" | "robinhood_mcp_read_only"
+>;
 export type BrokerMockCapability = "view_mock_portfolio" | "view_mock_quote";
 export type BrokerOrderCapability = "review_order" | "submit_mock_order";
 export type BrokerReadOnlyCapability =
@@ -28,18 +35,38 @@ export type BrokerCapability =
   | BrokerMockCapability
   | BrokerOrderCapability
   | BrokerReadOnlyCapability;
-export type BrokerConnectionState = "disabled" | "fixture_only";
+export type BrokerConnectionState =
+  | "disabled"
+  | "fixture_only"
+  | "unconfigured"
+  | "available"
+  | "unavailable";
+export type BrokerTransport = "none" | "externally_managed_mcp";
+export type BrokerCredentialManagement =
+  | "not_applicable"
+  | "externally_managed";
 export type BrokerAdapterErrorCode =
   | "adapter_disabled"
+  | "mcp_unconfigured"
+  | "mcp_tool_blocked"
+  | "mcp_tool_unavailable"
+  | "mcp_normalization_failed"
   | "unsupported_symbol"
   | "fixture_not_found";
 export type EquityOrderHistoryStatus =
   | "filled"
   | "cancelled"
   | "rejected"
-  | "expired";
+  | "expired"
+  | "queued"
+  | "open"
+  | "partially_filled"
+  | "unknown";
 export type TradabilityReason =
   | "fixture_tradable"
+  | "mcp_tradable"
+  | "mcp_not_tradable"
+  | "mcp_read_only"
   | "read_only_scope"
   | "symbol_not_found";
 
@@ -58,7 +85,10 @@ export interface BrokerAdapterStatus {
   readonly orderPlacementAvailable: false;
   readonly cancelOrderAvailable: false;
   readonly requiresCredentials: false;
-  readonly transport: "none";
+  readonly credentialsManagement: BrokerCredentialManagement;
+  readonly credentialsStoredByStreetSpeak: false;
+  readonly rawAccountIdentifiersExposed: false;
+  readonly transport: BrokerTransport;
   readonly message: string;
   readonly errors: readonly BrokerAdapterError[];
 }
@@ -76,12 +106,13 @@ export type BrokerReadResult<T> =
 export interface BrokerAccountSummary {
   readonly broker: "robinhood";
   readonly accountLabel: string;
-  readonly accountType: "fixture_individual";
-  readonly status: "fixture_only";
+  readonly accountType: string;
+  readonly status: string;
   readonly currency: "USD";
   readonly asOf: string;
-  readonly source: "fixture_static";
-  readonly label: "ROBINHOOD READ-ONLY FIXTURE - not real account data";
+  readonly source: RobinhoodReadOnlyDataSource;
+  readonly label: string;
+  readonly accountIdentifierRedacted: true;
 }
 
 export interface BrokerBuyingPower {
@@ -89,18 +120,19 @@ export interface BrokerBuyingPower {
   readonly buyingPower: number;
   readonly currency: "USD";
   readonly asOf: string;
-  readonly source: "fixture_static";
-  readonly label: "ROBINHOOD READ-ONLY FIXTURE - not real buying power";
+  readonly source: RobinhoodReadOnlyDataSource;
+  readonly label: string;
 }
 
 export interface EquityPosition {
   readonly symbol: string;
   readonly quantity: number;
   readonly averageCost: number;
+  readonly marketValue: number;
   readonly mockMarketValue: number;
   readonly currency: "USD";
   readonly asOf: string;
-  readonly source: "fixture_static";
+  readonly source: RobinhoodReadOnlyDataSource;
 }
 
 export interface BrokerPortfolioSnapshot {
@@ -109,8 +141,9 @@ export interface BrokerPortfolioSnapshot {
   readonly totalEquityValue: number;
   readonly currency: "USD";
   readonly asOf: string;
-  readonly source: "fixture_static";
-  readonly label: "ROBINHOOD READ-ONLY FIXTURE PORTFOLIO - not a broker account";
+  readonly source: RobinhoodReadOnlyDataSource;
+  readonly label: string;
+  readonly accountIdentifierRedacted: true;
   readonly buyingPower: BrokerBuyingPower;
   readonly positions: readonly EquityPosition[];
 }
@@ -122,8 +155,8 @@ export interface EquityQuote {
   readonly ask: number;
   readonly currency: "USD";
   readonly asOf: string;
-  readonly source: "fixture_static";
-  readonly label: "ROBINHOOD READ-ONLY FIXTURE QUOTE - not real market data";
+  readonly source: RobinhoodReadOnlyDataSource;
+  readonly label: string;
 }
 
 export interface EquityOrderHistoryItem {
@@ -137,8 +170,9 @@ export interface EquityOrderHistoryItem {
   readonly filledAt?: string;
   readonly averageFillPrice?: number;
   readonly currency: "USD";
-  readonly source: "fixture_static";
-  readonly label: "ROBINHOOD READ-ONLY FIXTURE ORDER HISTORY - not a real order";
+  readonly source: RobinhoodReadOnlyDataSource;
+  readonly label: string;
+  readonly rawOrderIdentifierRedacted: true;
 }
 
 export interface TradabilityResult {
@@ -148,15 +182,16 @@ export interface TradabilityResult {
   readonly reason: TradabilityReason;
   readonly message: string;
   readonly asOf: string;
-  readonly source: "fixture_static";
+  readonly source: RobinhoodReadOnlyDataSource;
 }
 
 export interface SymbolSearchResult {
   readonly symbol: string;
   readonly name: string;
   readonly assetClass: "equity";
-  readonly tradableInFixture: boolean;
-  readonly source: "fixture_static";
+  readonly tradableInFixture?: boolean;
+  readonly tradable: boolean;
+  readonly source: RobinhoodReadOnlyDataSource;
 }
 
 export interface RobinhoodReadOnlyFixtures {
@@ -173,10 +208,52 @@ export interface RobinhoodReadOnlyAdapterOptions {
   readonly fixtures?: RobinhoodReadOnlyFixtures;
 }
 
+export type RobinhoodMcpReadOnlyToolName =
+  | "get_accounts"
+  | "get_portfolio"
+  | "get_equity_positions"
+  | "get_equity_quotes"
+  | "get_equity_orders"
+  | "get_equity_tradability"
+  | "search";
+
+export type RobinhoodMcpBlockedToolName =
+  | "review_equity_order"
+  | "place_equity_order"
+  | "cancel_equity_order";
+
+export const ROBINHOOD_MCP_READ_ONLY_TOOL_ALLOWLIST: readonly RobinhoodMcpReadOnlyToolName[] =
+  [
+    "get_accounts",
+    "get_portfolio",
+    "get_equity_positions",
+    "get_equity_quotes",
+    "get_equity_orders",
+    "get_equity_tradability",
+    "search"
+  ];
+
+export const ROBINHOOD_MCP_BLOCKED_TOOLS: readonly RobinhoodMcpBlockedToolName[] =
+  ["review_equity_order", "place_equity_order", "cancel_equity_order"];
+
+export interface RobinhoodMcpReadOnlyClient {
+  readonly label?: string;
+  callTool(
+    toolName: RobinhoodMcpReadOnlyToolName,
+    input?: Readonly<Record<string, unknown>>
+  ): Promise<unknown>;
+}
+
+export interface RobinhoodMcpReadOnlyAdapterOptions {
+  readonly client?: RobinhoodMcpReadOnlyClient;
+  readonly now?: () => Date;
+}
+
 export interface RobinhoodReadOnlyAdapter {
   readonly kind: "robinhood_read_only";
   getCapabilities(): BrokerCapabilities;
   getStatus(): BrokerAdapterStatus;
+  getAccounts(): Promise<BrokerReadResult<readonly BrokerAccountSummary[]>>;
   getAccountSummary(): Promise<BrokerReadResult<BrokerAccountSummary>>;
   getPortfolioSnapshot(): Promise<BrokerReadResult<BrokerPortfolioSnapshot>>;
   getBuyingPower(): Promise<BrokerReadResult<BrokerBuyingPower>>;
@@ -387,6 +464,7 @@ const ROBINHOOD_FIXTURE_POSITIONS: readonly EquityPosition[] = [
     symbol: "HOOD",
     quantity: 4,
     averageCost: 18.5,
+    marketValue: 89.92,
     mockMarketValue: 89.92,
     currency: "USD",
     asOf: ROBINHOOD_FIXTURE_AS_OF,
@@ -396,6 +474,7 @@ const ROBINHOOD_FIXTURE_POSITIONS: readonly EquityPosition[] = [
     symbol: "AAPL",
     quantity: 2,
     averageCost: 150,
+    marketValue: 350.64,
     mockMarketValue: 350.64,
     currency: "USD",
     asOf: ROBINHOOD_FIXTURE_AS_OF,
@@ -405,6 +484,7 @@ const ROBINHOOD_FIXTURE_POSITIONS: readonly EquityPosition[] = [
     symbol: "NVDA",
     quantity: 1,
     averageCost: 120,
+    marketValue: 138.72,
     mockMarketValue: 138.72,
     currency: "USD",
     asOf: ROBINHOOD_FIXTURE_AS_OF,
@@ -421,7 +501,8 @@ export const ROBINHOOD_READ_ONLY_FIXTURES: RobinhoodReadOnlyFixtures = {
     currency: "USD",
     asOf: ROBINHOOD_FIXTURE_AS_OF,
     source: "fixture_static",
-    label: "ROBINHOOD READ-ONLY FIXTURE - not real account data"
+    label: "ROBINHOOD READ-ONLY FIXTURE - not real account data",
+    accountIdentifierRedacted: true
   },
   portfolioSnapshot: {
     broker: "robinhood",
@@ -431,6 +512,7 @@ export const ROBINHOOD_READ_ONLY_FIXTURES: RobinhoodReadOnlyFixtures = {
     asOf: ROBINHOOD_FIXTURE_AS_OF,
     source: "fixture_static",
     label: "ROBINHOOD READ-ONLY FIXTURE PORTFOLIO - not a broker account",
+    accountIdentifierRedacted: true,
     buyingPower: ROBINHOOD_FIXTURE_BUYING_POWER,
     positions: ROBINHOOD_FIXTURE_POSITIONS
   },
@@ -489,7 +571,8 @@ export const ROBINHOOD_READ_ONLY_FIXTURES: RobinhoodReadOnlyFixtures = {
       averageFillPrice: 18.5,
       currency: "USD",
       source: "fixture_static",
-      label: "ROBINHOOD READ-ONLY FIXTURE ORDER HISTORY - not a real order"
+      label: "ROBINHOOD READ-ONLY FIXTURE ORDER HISTORY - not a real order",
+      rawOrderIdentifierRedacted: true
     },
     {
       id: "fixture-order-2",
@@ -503,7 +586,8 @@ export const ROBINHOOD_READ_ONLY_FIXTURES: RobinhoodReadOnlyFixtures = {
       averageFillPrice: 150,
       currency: "USD",
       source: "fixture_static",
-      label: "ROBINHOOD READ-ONLY FIXTURE ORDER HISTORY - not a real order"
+      label: "ROBINHOOD READ-ONLY FIXTURE ORDER HISTORY - not a real order",
+      rawOrderIdentifierRedacted: true
     }
   ],
   tradability: [
@@ -554,6 +638,7 @@ export const ROBINHOOD_READ_ONLY_FIXTURES: RobinhoodReadOnlyFixtures = {
       name: "Robinhood Markets Inc.",
       assetClass: "equity",
       tradableInFixture: true,
+      tradable: true,
       source: "fixture_static"
     },
     {
@@ -561,6 +646,7 @@ export const ROBINHOOD_READ_ONLY_FIXTURES: RobinhoodReadOnlyFixtures = {
       name: "Apple Inc.",
       assetClass: "equity",
       tradableInFixture: true,
+      tradable: true,
       source: "fixture_static"
     },
     {
@@ -568,6 +654,7 @@ export const ROBINHOOD_READ_ONLY_FIXTURES: RobinhoodReadOnlyFixtures = {
       name: "NVIDIA Corp.",
       assetClass: "equity",
       tradableInFixture: true,
+      tradable: true,
       source: "fixture_static"
     },
     {
@@ -575,6 +662,7 @@ export const ROBINHOOD_READ_ONLY_FIXTURES: RobinhoodReadOnlyFixtures = {
       name: "SPDR S&P 500 ETF Trust",
       assetClass: "equity",
       tradableInFixture: false,
+      tradable: false,
       source: "fixture_static"
     }
   ]
@@ -688,6 +776,9 @@ export class RobinhoodReadOnlyFixtureAdapter implements RobinhoodReadOnlyAdapter
       orderPlacementAvailable: false,
       cancelOrderAvailable: false,
       requiresCredentials: false,
+      credentialsManagement: "not_applicable",
+      credentialsStoredByStreetSpeak: false,
+      rawAccountIdentifiersExposed: false,
       transport: "none",
       message:
         state === "fixture_only"
@@ -695,6 +786,12 @@ export class RobinhoodReadOnlyFixtureAdapter implements RobinhoodReadOnlyAdapter
           : "Robinhood read-only scaffold is disabled by default. Enable fixture reads explicitly for local tests only.",
       errors: state === "fixture_only" ? [] : [createAdapterDisabledError()]
     };
+  }
+
+  async getAccounts(): Promise<
+    BrokerReadResult<readonly BrokerAccountSummary[]>
+  > {
+    return this.readFixture([this.fixtures.accountSummary]);
   }
 
   async getAccountSummary(): Promise<BrokerReadResult<BrokerAccountSummary>> {
@@ -841,6 +938,847 @@ export class RobinhoodReadOnlyFixtureAdapter implements RobinhoodReadOnlyAdapter
   }
 }
 
+export class RobinhoodMcpReadOnlyAdapter implements RobinhoodReadOnlyAdapter {
+  readonly kind = "robinhood_read_only";
+  private readonly client?: RobinhoodMcpReadOnlyClient;
+  private readonly now: () => Date;
+
+  constructor(options: RobinhoodMcpReadOnlyAdapterOptions = {}) {
+    this.client = options.client;
+    this.now = options.now ?? (() => new Date());
+  }
+
+  getCapabilities(): BrokerCapabilities {
+    return {
+      adapter: this.kind,
+      mode: "read_only",
+      activeScopes: ["read_only"],
+      unavailableScopes: ["future_order_review", "future_live_execution"],
+      liveExecutionAvailable: false,
+      supportsLiveExecution: false,
+      requiresCredentials: false,
+      supportedAssetClasses: ["equity"],
+      supportedOrderTypes: [],
+      capabilities: [
+        "view_account_summary",
+        "view_portfolio",
+        "view_buying_power",
+        "view_positions",
+        "view_equity_quote",
+        "view_order_history",
+        "check_tradability",
+        "search_symbols"
+      ]
+    };
+  }
+
+  getStatus(): BrokerAdapterStatus {
+    const state: BrokerConnectionState = this.client
+      ? "available"
+      : "unconfigured";
+
+    return {
+      adapter: this.kind,
+      mode: "read_only",
+      state,
+      liveExecutionAvailable: false,
+      orderReviewAvailable: false,
+      orderPlacementAvailable: false,
+      cancelOrderAvailable: false,
+      requiresCredentials: false,
+      credentialsManagement: "externally_managed",
+      credentialsStoredByStreetSpeak: false,
+      rawAccountIdentifiersExposed: false,
+      transport: "externally_managed_mcp",
+      message:
+        state === "available"
+          ? "Robinhood MCP read-only client is externally configured. StreetSpeak stores no credentials and exposes no order review, placement, cancel, or live execution methods."
+          : "Robinhood MCP read-only client is not configured. Configure MCP outside StreetSpeak AI; do not add broker login fields, API keys, tokens, or MCP URLs here.",
+      errors: state === "available" ? [] : [createMcpUnconfiguredError()]
+    };
+  }
+
+  async getAccounts(): Promise<
+    BrokerReadResult<readonly BrokerAccountSummary[]>
+  > {
+    return this.readFromMcp("get_accounts", undefined, normalizeMcpAccounts);
+  }
+
+  async getAccountSummary(): Promise<BrokerReadResult<BrokerAccountSummary>> {
+    const accounts = await this.getAccounts();
+
+    if (!accounts.ok) {
+      return accounts;
+    }
+
+    const firstAccount = accounts.data[0];
+
+    if (!firstAccount) {
+      return {
+        ok: false,
+        error: createMcpNormalizationError("get_accounts")
+      };
+    }
+
+    return {
+      ok: true,
+      data: firstAccount
+    };
+  }
+
+  async getPortfolioSnapshot(): Promise<
+    BrokerReadResult<BrokerPortfolioSnapshot>
+  > {
+    return this.readFromMcp(
+      "get_portfolio",
+      undefined,
+      normalizeMcpPortfolioSnapshot
+    );
+  }
+
+  async getBuyingPower(): Promise<BrokerReadResult<BrokerBuyingPower>> {
+    const portfolio = await this.getPortfolioSnapshot();
+
+    if (!portfolio.ok) {
+      return portfolio;
+    }
+
+    return {
+      ok: true,
+      data: portfolio.data.buyingPower
+    };
+  }
+
+  async getPositions(): Promise<BrokerReadResult<readonly EquityPosition[]>> {
+    return this.readFromMcp(
+      "get_equity_positions",
+      undefined,
+      normalizeMcpPositions
+    );
+  }
+
+  async getEquityPosition(
+    symbol: string
+  ): Promise<BrokerReadResult<EquityPosition>> {
+    const normalizedSymbol = normalizeSymbol(symbol);
+    const positions = await this.getPositions();
+
+    if (!positions.ok) {
+      return positions;
+    }
+
+    const position = positions.data.find(
+      (candidate) => candidate.symbol === normalizedSymbol
+    );
+
+    if (!position) {
+      return {
+        ok: false,
+        error: createUnsupportedSymbolError(normalizedSymbol, "position")
+      };
+    }
+
+    return {
+      ok: true,
+      data: position
+    };
+  }
+
+  async getEquityQuote(symbol: string): Promise<BrokerReadResult<EquityQuote>> {
+    const normalizedSymbol = normalizeSymbol(symbol);
+
+    return this.readFromMcp(
+      "get_equity_quotes",
+      { symbols: [normalizedSymbol] },
+      (raw, asOf) => normalizeMcpQuote(raw, normalizedSymbol, asOf)
+    );
+  }
+
+  async getOrderHistory(): Promise<
+    BrokerReadResult<readonly EquityOrderHistoryItem[]>
+  > {
+    return this.readFromMcp(
+      "get_equity_orders",
+      undefined,
+      normalizeMcpOrderHistory
+    );
+  }
+
+  async getTradability(
+    symbol: string
+  ): Promise<BrokerReadResult<TradabilityResult>> {
+    const normalizedSymbol = normalizeSymbol(symbol);
+
+    return this.readFromMcp(
+      "get_equity_tradability",
+      { symbol: normalizedSymbol },
+      (raw, asOf) => normalizeMcpTradability(raw, normalizedSymbol, asOf)
+    );
+  }
+
+  async searchSymbols(
+    query: string
+  ): Promise<BrokerReadResult<readonly SymbolSearchResult[]>> {
+    return this.readFromMcp(
+      "search",
+      { query: query.trim() },
+      normalizeMcpSymbolSearchResults
+    );
+  }
+
+  private async readFromMcp<T>(
+    toolName: RobinhoodMcpReadOnlyToolName,
+    input: Readonly<Record<string, unknown>> | undefined,
+    normalize: (raw: unknown, asOf: string) => T
+  ): Promise<BrokerReadResult<T>> {
+    if (!this.client) {
+      return {
+        ok: false,
+        error: createMcpUnconfiguredError()
+      };
+    }
+
+    try {
+      const raw = await callRobinhoodMcpReadOnlyTool(
+        this.client,
+        toolName,
+        input
+      );
+
+      return {
+        ok: true,
+        data: normalize(raw, this.now().toISOString())
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: createMcpToolError(toolName, error)
+      };
+    }
+  }
+}
+
+class RobinhoodMcpBlockedToolError extends Error {
+  readonly code = "mcp_tool_blocked" as const;
+
+  constructor(readonly toolName: string) {
+    super(
+      `Robinhood MCP tool ${toolName} is blocked in StreetSpeak AI read-only mode.`
+    );
+  }
+}
+
+export function isRobinhoodMcpReadOnlyToolName(
+  toolName: string
+): toolName is RobinhoodMcpReadOnlyToolName {
+  return ROBINHOOD_MCP_READ_ONLY_TOOL_ALLOWLIST.includes(
+    toolName as RobinhoodMcpReadOnlyToolName
+  );
+}
+
+export function assertRobinhoodMcpReadOnlyToolName(
+  toolName: string
+): asserts toolName is RobinhoodMcpReadOnlyToolName {
+  if (!isRobinhoodMcpReadOnlyToolName(toolName)) {
+    throw new RobinhoodMcpBlockedToolError(toolName);
+  }
+}
+
+export async function callRobinhoodMcpReadOnlyTool(
+  client: RobinhoodMcpReadOnlyClient,
+  toolName: string,
+  input?: Readonly<Record<string, unknown>>
+): Promise<unknown> {
+  assertRobinhoodMcpReadOnlyToolName(toolName);
+
+  return client.callTool(toolName, input);
+}
+
+function normalizeMcpAccounts(
+  raw: unknown,
+  fallbackAsOf: string
+): readonly BrokerAccountSummary[] {
+  const records = extractRecords(raw, ["accounts", "results", "data", "items"]);
+
+  return records.map((record, index) => ({
+    broker: "robinhood",
+    accountLabel: `Robinhood account ${index + 1} (identifier redacted)`,
+    accountType:
+      readString(record, ["account_type", "type", "accountType"]) ?? "unknown",
+    status: readString(record, ["status", "state"]) ?? "read_only_available",
+    currency: "USD",
+    asOf: readDate(record, fallbackAsOf),
+    source: "robinhood_mcp_read_only",
+    label:
+      "ROBINHOOD MCP READ-ONLY ACCOUNT - account identifier redacted by StreetSpeak AI",
+    accountIdentifierRedacted: true
+  }));
+}
+
+function normalizeMcpPortfolioSnapshot(
+  raw: unknown,
+  fallbackAsOf: string
+): BrokerPortfolioSnapshot {
+  const record = extractFirstRecord(raw, [
+    "portfolio",
+    "portfolios",
+    "result",
+    "data"
+  ]);
+  const totalEquityValue =
+    readNumber(record, [
+      "total_equity_value",
+      "total_equity",
+      "equity",
+      "equity_value",
+      "portfolio_value",
+      "market_value",
+      "total_market_value"
+    ]) ?? 0;
+  const cashAvailable =
+    readNumber(record, [
+      "cash_available",
+      "cash",
+      "withdrawable_cash",
+      "cashHeldForOrders"
+    ]) ?? 0;
+  const buyingPower =
+    readNumber(record, [
+      "buying_power",
+      "buyingPower",
+      "equity_buying_power",
+      "available_buying_power"
+    ]) ?? cashAvailable;
+  const positionsRecord = findValue(record, ["positions", "equity_positions"]);
+  const positions =
+    positionsRecord === undefined
+      ? []
+      : normalizeMcpPositions(positionsRecord, fallbackAsOf);
+  const asOf = readDate(record, fallbackAsOf);
+
+  return {
+    broker: "robinhood",
+    accountLabel: "Robinhood portfolio (account identifier redacted)",
+    totalEquityValue,
+    currency: "USD",
+    asOf,
+    source: "robinhood_mcp_read_only",
+    label:
+      "ROBINHOOD MCP READ-ONLY PORTFOLIO - account identifier redacted; values are in-memory only",
+    accountIdentifierRedacted: true,
+    buyingPower: {
+      cashAvailable,
+      buyingPower,
+      currency: "USD",
+      asOf,
+      source: "robinhood_mcp_read_only",
+      label: "ROBINHOOD MCP READ-ONLY BUYING POWER - in-memory display only"
+    },
+    positions
+  };
+}
+
+function normalizeMcpPositions(
+  raw: unknown,
+  fallbackAsOf: string
+): readonly EquityPosition[] {
+  const records = extractRecords(raw, [
+    "positions",
+    "equity_positions",
+    "results",
+    "data",
+    "items"
+  ]);
+
+  return records.flatMap((record) => {
+    const symbol = readSymbol(record);
+
+    if (!symbol) {
+      return [];
+    }
+
+    const marketValue =
+      readNumber(record, [
+        "market_value",
+        "marketValue",
+        "equity_value",
+        "value",
+        "current_value"
+      ]) ?? 0;
+
+    return [
+      {
+        symbol,
+        quantity:
+          readNumber(record, ["quantity", "shares", "shares_held"]) ?? 0,
+        averageCost:
+          readNumber(record, [
+            "average_cost",
+            "averageCost",
+            "avg_cost",
+            "average_buy_price",
+            "cost_basis"
+          ]) ?? 0,
+        marketValue,
+        mockMarketValue: marketValue,
+        currency: "USD",
+        asOf: readDate(record, fallbackAsOf),
+        source: "robinhood_mcp_read_only"
+      }
+    ];
+  });
+}
+
+function normalizeMcpQuote(
+  raw: unknown,
+  requestedSymbol: string,
+  fallbackAsOf: string
+): EquityQuote {
+  const records = extractRecords(raw, [
+    "quotes",
+    "equity_quotes",
+    "results",
+    "data",
+    "items"
+  ]);
+  const record =
+    records.find((candidate) => readSymbol(candidate) === requestedSymbol) ??
+    records[0] ??
+    {};
+
+  return {
+    symbol: readSymbol(record) ?? requestedSymbol,
+    last:
+      readNumber(record, [
+        "last",
+        "last_price",
+        "lastTradePrice",
+        "last_trade_price",
+        "mark_price",
+        "price"
+      ]) ?? 0,
+    bid: readNumber(record, ["bid", "bid_price", "bidPrice"]) ?? 0,
+    ask: readNumber(record, ["ask", "ask_price", "askPrice"]) ?? 0,
+    currency: "USD",
+    asOf: readDate(record, fallbackAsOf),
+    source: "robinhood_mcp_read_only",
+    label:
+      "ROBINHOOD MCP READ-ONLY QUOTE - real read-only market data, in-memory only"
+  };
+}
+
+function normalizeMcpOrderHistory(
+  raw: unknown,
+  fallbackAsOf: string
+): readonly EquityOrderHistoryItem[] {
+  const records = extractRecords(raw, [
+    "orders",
+    "equity_orders",
+    "results",
+    "data",
+    "items"
+  ]);
+
+  return records.flatMap((record, index) => {
+    const symbol = readSymbol(record);
+
+    if (!symbol) {
+      return [];
+    }
+
+    const averageFillPrice = readNumber(record, [
+      "average_fill_price",
+      "averageFillPrice",
+      "avg_fill_price",
+      "filled_avg_price",
+      "price"
+    ]);
+    const item: EquityOrderHistoryItem = {
+      id: `redacted-order-${index + 1}`,
+      symbol,
+      side: normalizeOrderSide(readString(record, ["side", "direction"])),
+      quantity:
+        readNumber(record, [
+          "quantity",
+          "cumulative_quantity",
+          "filled_quantity",
+          "shares"
+        ]) ?? 0,
+      type: normalizeOrderType(readString(record, ["type", "order_type"])),
+      status: normalizeOrderStatus(readString(record, ["status", "state"])),
+      submittedAt: readDate(
+        record,
+        fallbackAsOf,
+        "submitted_at",
+        "created_at",
+        "createdAt",
+        "updated_at"
+      ),
+      currency: "USD",
+      source: "robinhood_mcp_read_only",
+      label:
+        "ROBINHOOD MCP READ-ONLY ORDER HISTORY - raw order identifier redacted",
+      rawOrderIdentifierRedacted: true
+    };
+    const filledAt = readDateOrUndefined(record, [
+      "filled_at",
+      "filledAt",
+      "last_transaction_at"
+    ]);
+
+    return [
+      {
+        ...item,
+        ...(filledAt === undefined ? {} : { filledAt }),
+        ...(averageFillPrice === undefined ? {} : { averageFillPrice })
+      }
+    ];
+  });
+}
+
+function normalizeMcpTradability(
+  raw: unknown,
+  requestedSymbol: string,
+  fallbackAsOf: string
+): TradabilityResult {
+  const record =
+    extractRecords(raw, ["tradability", "results", "data", "items"])[0] ?? {};
+  const tradable =
+    readBoolean(record, [
+      "tradable",
+      "is_tradable",
+      "can_trade",
+      "fractional_tradability"
+    ]) ?? false;
+
+  return {
+    symbol: readSymbol(record) ?? requestedSymbol,
+    assetClass: "equity",
+    tradable,
+    reason: tradable ? "mcp_tradable" : "mcp_not_tradable",
+    message:
+      "Robinhood MCP read-only tradability check. This does not enable order review, order placement, cancel order, or live execution.",
+    asOf: readDate(record, fallbackAsOf),
+    source: "robinhood_mcp_read_only"
+  };
+}
+
+function normalizeMcpSymbolSearchResults(
+  raw: unknown,
+  fallbackAsOf: string
+): readonly SymbolSearchResult[] {
+  void fallbackAsOf;
+  const records = extractRecords(raw, [
+    "results",
+    "symbols",
+    "instruments",
+    "data",
+    "items"
+  ]);
+
+  return records.flatMap((record) => {
+    const symbol = readSymbol(record);
+
+    if (!symbol) {
+      return [];
+    }
+
+    return [
+      {
+        symbol,
+        name:
+          readString(record, ["name", "simple_name", "simpleName"]) ??
+          "Name unavailable",
+        assetClass: "equity",
+        tradable:
+          readBoolean(record, ["tradable", "is_tradable", "can_trade"]) ??
+          false,
+        source: "robinhood_mcp_read_only"
+      }
+    ];
+  });
+}
+
+function extractFirstRecord(
+  raw: unknown,
+  keys: readonly string[]
+): UnknownRecord {
+  return extractRecords(raw, keys)[0] ?? {};
+}
+
+function extractRecords(
+  raw: unknown,
+  keys: readonly string[]
+): readonly UnknownRecord[] {
+  const payload = unwrapMcpResponse(raw);
+
+  if (Array.isArray(payload)) {
+    return payload.flatMap((item) => extractRecordsFromValue(item, keys));
+  }
+
+  return extractRecordsFromValue(payload, keys);
+}
+
+function extractRecordsFromValue(
+  value: unknown,
+  keys: readonly string[]
+): readonly UnknownRecord[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => extractRecordsFromValue(item, keys));
+  }
+
+  if (!isUnknownRecord(value)) {
+    return [];
+  }
+
+  for (const key of keys) {
+    const child = findValue(value, [key]);
+
+    if (child !== undefined) {
+      const childRecords = extractRecordsFromValue(child, keys);
+
+      if (childRecords.length > 0) {
+        return childRecords;
+      }
+    }
+  }
+
+  return [value];
+}
+
+function unwrapMcpResponse(raw: unknown): unknown {
+  if (!isUnknownRecord(raw)) {
+    return raw;
+  }
+
+  const structuredContent = raw.structuredContent;
+
+  if (structuredContent !== undefined) {
+    return structuredContent;
+  }
+
+  const content = raw.content;
+
+  if (Array.isArray(content)) {
+    const parsed = content.flatMap((item) => {
+      if (!isUnknownRecord(item) || typeof item.text !== "string") {
+        return [];
+      }
+
+      return [parseMaybeJson(item.text)];
+    });
+
+    if (parsed.length === 1) {
+      return parsed[0];
+    }
+
+    if (parsed.length > 1) {
+      return parsed;
+    }
+  }
+
+  if (raw.result !== undefined) {
+    return raw.result;
+  }
+
+  return raw;
+}
+
+function parseMaybeJson(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
+}
+
+type UnknownRecord = Record<string, unknown>;
+
+function isUnknownRecord(value: unknown): value is UnknownRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function findValue(
+  record: UnknownRecord,
+  keys: readonly string[]
+): unknown | undefined {
+  const normalizedKeys = keys.map(normalizeRecordKey);
+
+  for (const [key, value] of Object.entries(record)) {
+    if (normalizedKeys.includes(normalizeRecordKey(key))) {
+      return value;
+    }
+  }
+
+  for (const wrapperKey of ["instrument", "asset", "security", "quote"]) {
+    const nested = record[wrapperKey];
+
+    if (isUnknownRecord(nested)) {
+      const value = findValue(nested, keys);
+
+      if (value !== undefined) {
+        return value;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeRecordKey(key: string): string {
+  return key.toLowerCase().replaceAll("_", "").replaceAll("-", "");
+}
+
+function readString(
+  record: UnknownRecord,
+  keys: readonly string[]
+): string | undefined {
+  const value = findValue(record, keys);
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+
+    return trimmed ? trimmed : undefined;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  return undefined;
+}
+
+function readSymbol(record: UnknownRecord): string | undefined {
+  const symbol = readString(record, [
+    "symbol",
+    "ticker",
+    "trading_symbol",
+    "tradingSymbol"
+  ]);
+
+  return symbol?.trim().toUpperCase();
+}
+
+function readNumber(
+  record: UnknownRecord,
+  keys: readonly string[]
+): number | undefined {
+  const value = findValue(record, keys);
+
+  return coerceNumber(value);
+}
+
+function coerceNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value.replace(/[$,]/gu, ""));
+
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  if (isUnknownRecord(value)) {
+    return coerceNumber(value.amount ?? value.value);
+  }
+
+  return undefined;
+}
+
+function readBoolean(
+  record: UnknownRecord,
+  keys: readonly string[]
+): boolean | undefined {
+  const value = findValue(record, keys);
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+
+    if (["true", "yes", "tradable", "active"].includes(normalized)) {
+      return true;
+    }
+
+    if (["false", "no", "not_tradable", "inactive"].includes(normalized)) {
+      return false;
+    }
+  }
+
+  return undefined;
+}
+
+function readDate(
+  record: UnknownRecord,
+  fallbackAsOf: string,
+  ...preferredKeys: readonly string[]
+): string {
+  return (
+    readDateOrUndefined(record, [
+      ...preferredKeys,
+      "as_of",
+      "asOf",
+      "updated_at",
+      "updatedAt",
+      "created_at",
+      "createdAt"
+    ]) ?? fallbackAsOf
+  );
+}
+
+function readDateOrUndefined(
+  record: UnknownRecord,
+  keys: readonly string[]
+): string | undefined {
+  const value = readString(record, keys);
+
+  if (!value) {
+    return undefined;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+
+  return date.toISOString();
+}
+
+function normalizeOrderSide(value: string | undefined): EquityOrderSide {
+  return value?.trim().toLowerCase() === "sell" ? "sell" : "buy";
+}
+
+function normalizeOrderType(value: string | undefined): EquityOrderType {
+  return value?.trim().toLowerCase() === "limit" ? "limit" : "market";
+}
+
+function normalizeOrderStatus(
+  value: string | undefined
+): EquityOrderHistoryStatus {
+  const normalized = value?.trim().toLowerCase().replaceAll("-", "_");
+
+  if (normalized === "cancelled" || normalized === "canceled") {
+    return "cancelled";
+  }
+
+  if (
+    normalized === "filled" ||
+    normalized === "rejected" ||
+    normalized === "expired" ||
+    normalized === "queued" ||
+    normalized === "open" ||
+    normalized === "partially_filled"
+  ) {
+    return normalized;
+  }
+
+  return "unknown";
+}
+
 export function getMockPortfolio(): MockPortfolio {
   return MOCK_PORTFOLIO;
 }
@@ -904,6 +1842,12 @@ export function createRobinhoodReadOnlyFixtureAdapter(
   });
 }
 
+export function createRobinhoodMcpReadOnlyAdapter(
+  options: RobinhoodMcpReadOnlyAdapterOptions = {}
+): RobinhoodReadOnlyAdapter {
+  return new RobinhoodMcpReadOnlyAdapter(options);
+}
+
 function isMockTickerSymbol(symbol: string): symbol is MockTickerSymbol {
   return Object.hasOwn(MOCK_QUOTES, symbol);
 }
@@ -928,13 +1872,52 @@ function createAdapterDisabledError(): BrokerAdapterError {
   };
 }
 
+function createMcpUnconfiguredError(): BrokerAdapterError {
+  return {
+    code: "mcp_unconfigured",
+    message:
+      "Robinhood MCP read-only client is not configured. StreetSpeak AI stores no MCP URL, token, broker credential, or Robinhood login state.",
+    retryable: false
+  };
+}
+
+function createMcpToolError(
+  toolName: RobinhoodMcpReadOnlyToolName,
+  error: unknown
+): BrokerAdapterError {
+  if (error instanceof RobinhoodMcpBlockedToolError) {
+    return {
+      code: "mcp_tool_blocked",
+      message:
+        "Robinhood MCP mutation/order tools are blocked in StreetSpeak AI read-only mode.",
+      retryable: false
+    };
+  }
+
+  return {
+    code: "mcp_tool_unavailable",
+    message: `Robinhood MCP read-only tool ${toolName} is unavailable or returned an unreadable response. Raw broker data was not retained.`,
+    retryable: false
+  };
+}
+
+function createMcpNormalizationError(
+  toolName: RobinhoodMcpReadOnlyToolName
+): BrokerAdapterError {
+  return {
+    code: "mcp_normalization_failed",
+    message: `Robinhood MCP read-only tool ${toolName} returned no normalizable redacted data. Raw broker data was not retained.`,
+    retryable: false
+  };
+}
+
 function createUnsupportedSymbolError(
   symbol: string,
   fixtureKind: "position" | "quote"
 ): BrokerAdapterError {
   return {
     code: "unsupported_symbol",
-    message: `${symbol} is not present in the Robinhood read-only ${fixtureKind} fixtures. No live broker or market data lookup was attempted.`,
+    message: `${symbol} is not present in the Robinhood read-only ${fixtureKind} data. No order review, order placement, cancel order, or live execution was attempted.`,
     retryable: false
   };
 }

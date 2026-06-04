@@ -3,7 +3,7 @@
 The initial security model is conservative:
 
 - No live broker execution.
-- No Robinhood MCP integration.
+- Robinhood MCP integration is read-only only, externally managed, and unavailable by default unless a runtime client is injected.
 - No Public integration.
 - No plaintext secret storage.
 - No trade recommendations.
@@ -18,6 +18,7 @@ The initial security model is conservative:
 - Confirmation challenges require a specific phrase and reject generic responses.
 - Audit event payloads redact common secret-like fields before storage.
 - The mock broker adapter exposes mock review and mock submission only.
-- The Robinhood read-only scaffold is disabled by default, fixture-only, and exposes no order review, placement, staging, submission, or cancel methods.
+- The Robinhood fixture read-only adapter remains fixture-only.
+- The Robinhood MCP read-only adapter exposes no order review, placement, staging, submission, live execution, or cancel methods, and stores no credentials or raw account data.
 
-Future broker phases should start with a separately approved read-only connection, require explicit opt-in, and keep confirmation and audit logic separate from adapter implementation. No future broker work should store broker secrets in plaintext, log raw account IDs, skip order review before live execution, or allow generic confirmation phrases.
+Future broker phases after read-only connection require explicit opt-in and must keep confirmation and audit logic separate from adapter implementation. No future broker work should store broker secrets in plaintext, log raw account IDs, skip order review before live execution, or allow generic confirmation phrases.

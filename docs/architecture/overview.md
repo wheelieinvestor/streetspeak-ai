@@ -8,9 +8,9 @@ StreetSpeak AI is organized as a TypeScript pnpm monorepo.
 - `packages/safety`: safety reviews, explicit confirmation challenges, and generic-confirmation rejection.
 - `packages/audit`: audit event types, redaction helpers, local in-memory sink, local audit exports, and mock receipt exports.
 - `packages/voice`: voice transcript and provider abstraction for browser speech and mock/local development providers. ElevenLabs is not implemented.
-- `packages/brokers`: mock-only broker adapter, static/fake portfolio fixtures, and static/fake quote fixtures.
+- `packages/brokers`: mock-only broker adapter, Robinhood fixture read-only adapter, and Robinhood MCP read-only adapter boundary.
 
-The first scaffold is mock-only. Robinhood MCP and Public adapters are planned but not implemented. There is no live broker execution method in the current broker interface.
+The app remains mock-first. Robinhood MCP support is read-only only, externally managed, and unavailable by default unless a runtime client is injected. Public adapters are planned but not implemented. There is no live broker execution method in the current broker interface.
 
 ## v0.1 mock trading desk flow
 
@@ -49,4 +49,4 @@ The v0.1 order contracts support share-quantity equity tickets only. Spoken noti
 
 ## Mock-only boundaries
 
-There is no Robinhood MCP, Public integration, real broker login, live broker execution, real order placement, real market data API, deployment, payment, database migration, Discord/X automation, raw audio storage, or autonomous trading behavior in v0.1.
+There is no Public integration, real broker login, live broker execution, real order review, real order placement, cancel order, deployment, payment, database migration, Discord/X automation, raw audio storage, or autonomous trading behavior in v0.1. The only real Robinhood path is the externally managed MCP read-only boundary for account, portfolio, position, quote, order-history, tradability, and search reads.
