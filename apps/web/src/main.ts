@@ -779,6 +779,7 @@ function renderRobinhoodMcpReadOnlyPanel(
           <div><dt>Credentials</dt><dd>${escapeHtml(status.credentialsManagement ?? "externally managed / not stored by StreetSpeak")}</dd></div>
           <div><dt>Credential fields required</dt><dd>${model.credentialFieldsRequired.length}</dd></div>
           <div><dt>Storage policy</dt><dd>${escapeHtml(model.storagePolicy)}</dd></div>
+          <div><dt>Redacted smoke status</dt><dd>${escapeHtml(model.smokeStatus.replaceAll("_", " "))}</dd></div>
           <div><dt>Live execution available</dt><dd>${String(status.liveExecutionAvailable)}</dd></div>
           <div><dt>Order review available</dt><dd>${String(status.orderReviewAvailable)}</dd></div>
           <div><dt>Order placement available</dt><dd>${String(status.orderPlacementAvailable)}</dd></div>

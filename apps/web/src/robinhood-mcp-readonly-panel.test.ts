@@ -34,6 +34,7 @@ describe("Robinhood MCP read-only panel model", () => {
       storagePolicy: "in_memory_only",
       credentialFieldsRequired: [],
       noOrderActions: true,
+      smokeStatus: "unavailable_unconfigured",
       status: {
         state: "unconfigured",
         transport: "externally_managed_mcp",
@@ -88,6 +89,7 @@ describe("Robinhood MCP read-only panel model", () => {
       "get_equity_tradability",
       "search"
     ]);
+    expect(model.smokeStatus).toBe("redacted_refresh_completed");
     expect(model.status).toMatchObject({
       state: "available",
       liveExecutionAvailable: false,

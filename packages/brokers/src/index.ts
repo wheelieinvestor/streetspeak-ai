@@ -1194,6 +1194,244 @@ export async function callRobinhoodMcpReadOnlyTool(
   return client.callTool(toolName, input);
 }
 
+export type RobinhoodMcpSmokeToolStatus = "success" | "unavailable" | "failed";
+
+export interface RobinhoodMcpSmokeToolSummary {
+  readonly toolName: RobinhoodMcpReadOnlyToolName;
+  readonly status: RobinhoodMcpSmokeToolStatus;
+  readonly summary: string;
+  readonly count?: number;
+  readonly identifiersRedacted?: true;
+  readonly valuesRedacted?: true;
+  readonly pricesRedacted?: true;
+  readonly booleanResult?: boolean;
+  readonly error?: string;
+}
+
+export interface RobinhoodMcpSmokeTestSummary {
+  readonly kind: "robinhood_mcp_read_only_smoke_test";
+  readonly status: "available" | "unavailable" | "partial_failure";
+  readonly source: "robinhood_mcp_read_only";
+  readonly liveExecutionAvailable: false;
+  readonly orderReviewAvailable: false;
+  readonly orderPlacementAvailable: false;
+  readonly cancelOrderAvailable: false;
+  readonly rawPayloadIncluded: false;
+  readonly toolSummaries: readonly RobinhoodMcpSmokeToolSummary[];
+  readonly lines: readonly string[];
+}
+
+export interface RobinhoodMcpSmokeTestOptions {
+  readonly client?: RobinhoodMcpReadOnlyClient;
+  readonly quoteSymbol?: string;
+  readonly tradabilitySymbol?: string;
+  readonly searchQuery?: string;
+}
+
+const SENSITIVE_MCP_KEY_PATTERN =
+  /^(account|account_id|accountid|account_number|accountnumber|account_url|accounturl|accountIdentifier|brokerAccountId|brokerAccountIdentifier|order_id|orderid|orderId|brokerOrderId|rawOrderIdentifier|portfolio|portfolio_value|portfolioValue|total_equity_value|totalEquityValue|equity|buying_power|buyingPower|cash|cash_available|cashAvailable|holdings|positions|last_price|lastPrice|bid_price|bidPrice|ask_price|askPrice|mark_price|markPrice|price|authorization|accessToken|refreshToken|sessionToken|token|secret|password|credential|apiKey|api_key|raw|rawPayload|mcpPayload)$/i;
+
+export function redactRobinhoodMcpReadOnlyPayload(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => redactRobinhoodMcpReadOnlyPayload(item));
+  }
+
+  if (!isUnknownRecord(value)) {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      key,
+      SENSITIVE_MCP_KEY_PATTERN.test(key)
+        ? "[REDACTED]"
+        : redactRobinhoodMcpReadOnlyPayload(entry)
+    ])
+  );
+}
+
+export async function runRobinhoodMcpReadOnlySmokeTest(
+  options: RobinhoodMcpSmokeTestOptions = {}
+): Promise<RobinhoodMcpSmokeTestSummary> {
+  if (!options.client) {
+    const toolSummaries = ROBINHOOD_MCP_READ_ONLY_TOOL_ALLOWLIST.map(
+      (toolName): RobinhoodMcpSmokeToolSummary => ({
+        toolName,
+        status: "unavailable",
+        summary: `${toolName}: unavailable/unconfigured`
+      })
+    );
+
+    return createSmokeSummary(toolSummaries);
+  }
+
+  const toolSummaries: RobinhoodMcpSmokeToolSummary[] = [];
+  toolSummaries.push(await summarizeSmokeCall(options.client, "get_accounts"));
+  toolSummaries.push(await summarizeSmokeCall(options.client, "get_portfolio"));
+  toolSummaries.push(
+    await summarizeSmokeCall(options.client, "get_equity_positions")
+  );
+  toolSummaries.push(
+    await summarizeSmokeCall(options.client, "get_equity_quotes", {
+      symbol: normalizeSmokeSymbol(options.quoteSymbol ?? "HOOD")
+    })
+  );
+  toolSummaries.push(
+    await summarizeSmokeCall(options.client, "get_equity_orders")
+  );
+  toolSummaries.push(
+    await summarizeSmokeCall(options.client, "get_equity_tradability", {
+      symbol: normalizeSmokeSymbol(options.tradabilitySymbol ?? "HOOD")
+    })
+  );
+  toolSummaries.push(
+    await summarizeSmokeCall(options.client, "search", {
+      query: (options.searchQuery ?? "hood").trim()
+    })
+  );
+
+  return createSmokeSummary(toolSummaries);
+}
+
+async function summarizeSmokeCall(
+  client: RobinhoodMcpReadOnlyClient,
+  toolName: RobinhoodMcpReadOnlyToolName,
+  input?: Readonly<Record<string, unknown>>
+): Promise<RobinhoodMcpSmokeToolSummary> {
+  try {
+    const raw = await callRobinhoodMcpReadOnlyTool(client, toolName, input);
+    const redacted = redactRobinhoodMcpReadOnlyPayload(raw);
+    return createSmokeToolSuccessSummary(toolName, redacted);
+  } catch (error) {
+    return {
+      toolName,
+      status: "failed",
+      summary: `${toolName}: failed, error redacted`,
+      error: error instanceof Error ? error.name : "UnknownError"
+    };
+  }
+}
+
+function createSmokeToolSuccessSummary(
+  toolName: RobinhoodMcpReadOnlyToolName,
+  redactedPayload: unknown
+): RobinhoodMcpSmokeToolSummary {
+  const count = countSmokeRecords(redactedPayload);
+
+  switch (toolName) {
+    case "get_accounts":
+      return {
+        toolName,
+        status: "success",
+        count,
+        identifiersRedacted: true,
+        summary: `get_accounts: success, count=${count}, identifiers redacted`
+      };
+    case "get_portfolio":
+      return {
+        toolName,
+        status: "success",
+        valuesRedacted: true,
+        summary: "get_portfolio: success, values redacted"
+      };
+    case "get_equity_positions":
+      return {
+        toolName,
+        status: "success",
+        count,
+        valuesRedacted: true,
+        summary: `get_equity_positions: success, count=${count}, values redacted`
+      };
+    case "get_equity_quotes":
+      return {
+        toolName,
+        status: "success",
+        pricesRedacted: true,
+        summary:
+          "get_equity_quotes: success, sample symbol checked, prices redacted"
+      };
+    case "get_equity_orders":
+      return {
+        toolName,
+        status: "success",
+        count,
+        identifiersRedacted: true,
+        summary: `get_equity_orders: success, count=${count}, identifiers redacted`
+      };
+    case "get_equity_tradability":
+      return {
+        toolName,
+        status: "success",
+        booleanResult: readSmokeTradabilityBoolean(redactedPayload),
+        summary: "get_equity_tradability: success, boolean result only if safe"
+      };
+    case "search":
+      return {
+        toolName,
+        status: "success",
+        count,
+        summary: `search: success, count=${count}`
+      };
+  }
+}
+
+function createSmokeSummary(
+  toolSummaries: readonly RobinhoodMcpSmokeToolSummary[]
+): RobinhoodMcpSmokeTestSummary {
+  const failed = toolSummaries.some((summary) => summary.status === "failed");
+  const available = toolSummaries.some(
+    (summary) => summary.status === "success"
+  );
+
+  return {
+    kind: "robinhood_mcp_read_only_smoke_test",
+    status: failed
+      ? "partial_failure"
+      : available
+        ? "available"
+        : "unavailable",
+    source: "robinhood_mcp_read_only",
+    liveExecutionAvailable: false,
+    orderReviewAvailable: false,
+    orderPlacementAvailable: false,
+    cancelOrderAvailable: false,
+    rawPayloadIncluded: false,
+    toolSummaries,
+    lines: toolSummaries.map((summary) => summary.summary)
+  };
+}
+
+function countSmokeRecords(redactedPayload: unknown): number {
+  const records = extractRecords(redactedPayload, [
+    "accounts",
+    "positions",
+    "quotes",
+    "orders",
+    "results",
+    "data",
+    "items"
+  ]);
+
+  return records.length;
+}
+
+function readSmokeTradabilityBoolean(
+  redactedPayload: unknown
+): boolean | undefined {
+  const record = extractFirstRecord(redactedPayload, [
+    "tradability",
+    "result",
+    "data"
+  ]);
+  const value = findValue(record, ["tradable", "is_tradable", "can_trade"]);
+
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function normalizeSmokeSymbol(symbol: string): string {
+  return symbol.trim().toUpperCase();
+}
+
 function normalizeMcpAccounts(
   raw: unknown,
   fallbackAsOf: string
