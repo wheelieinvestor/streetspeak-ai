@@ -114,6 +114,19 @@ describe("core command routing", () => {
     });
   });
 
+  it("keeps unsupported notional commands from creating final tickets", async () => {
+    const state = await createMockTradingDeskTurn("buy $500 of HOOD", {
+      commandId: "cmd-notional",
+      now: new Date("2026-01-01T00:00:00.000Z")
+    });
+
+    expect(state.status).toBe("unsupported");
+    expect(state.ticket).toBeUndefined();
+    expect(state.challenge).toBeUndefined();
+    expect(state.brokerResponse).toBeUndefined();
+    expect(state.session.liveTradingEnabled).toBe(false);
+  });
+
   it("rejects invalid and ambiguous order commands", () => {
     expect(parseMockTradingCommand("buy HOOD")).toMatchObject({
       kind: "invalid",
@@ -284,6 +297,9 @@ describe("core command routing", () => {
     });
 
     expect(rejected.status).toBe("confirmation_rejected");
+    expect(rejected.message).toBe(
+      "Confirmation rejected. Generic confirmations never submit an order; use the exact challenge phrase and code for mock-only submission."
+    );
     expect(rejected.confirmation).toEqual({
       accepted: false,
       status: "rejected",

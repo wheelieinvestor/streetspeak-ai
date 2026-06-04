@@ -34,6 +34,9 @@ importers:
 
   apps/web:
     dependencies:
+      "@streetspeak-ai/audit":
+        specifier: workspace:*
+        version: link:../../packages/audit
       "@streetspeak-ai/core":
         specifier: workspace:*
         version: link:../../packages/core

@@ -110,6 +110,13 @@ describe("browser speech adapter", () => {
     });
 
     expect(states.map((state) => state.status)).toContain("listening");
+    expect(states.find((state) => state.status === "listening")).toMatchObject({
+      message:
+        "Listening through browser-native speech input. StreetSpeak AI does not store raw audio or send it to a StreetSpeak server."
+    });
+    expect(states.map((state) => state.message).join(" ")).not.toContain(
+      "Listening locally through the browser"
+    );
     expect(states.at(-1)).toMatchObject({
       status: "stopped",
       lastTranscript: "buy 5 HOOD"

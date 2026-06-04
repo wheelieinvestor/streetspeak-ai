@@ -19,13 +19,14 @@ StreetSpeak AI v0.1 is a local mock trading desk demo. It can:
 - Route typed mock portfolio, quote, and share-quantity equity order commands.
 - Optionally capture browser-native speech transcripts when the user's browser supports it.
 - Require first-run local safety onboarding before the demo flow opens.
-- Store onboarding acknowledgement and demo settings in local browser storage only.
+- Store onboarding acknowledgement, demo settings, and a redacted audit timeline in local browser storage only.
 - Show a static/fake mock portfolio and static/fake mock quotes for `HOOD`, `SPY`, `NVDA`, `AAPL`, and `SOFI`.
 - Build mock market or limit equity order tickets for supported share-quantity commands.
 - Run every ticket through a safety review.
 - Require an exact confirmation phrase with a short unique code before mock submission.
 - Reject generic confirmations like `yes`, `do it`, or `confirmed`.
-- Record an in-memory audit timeline for command, routing, ticket, safety, confirmation, and mock execution events.
+- Persist redacted local audit events for command, routing, ticket, safety, confirmation, and mock execution events.
+- Export local-only audit JSON and mock receipt Markdown/JSON.
 
 Mock mode is the default first experience. Live execution is unavailable and must remain disabled by default in future phases.
 
@@ -61,9 +62,9 @@ See [docs/demo-script.md](docs/demo-script.md) for a 2-minute reviewer walkthrou
 
 ## Browser Voice Input
 
-Browser voice input is optional and local to the web app. When enabled in the local settings panel, StreetSpeak AI feature-detects the browser's built-in speech recognition support. If the browser does not expose a compatible speech recognition API, the app shows an unsupported status and typed input remains the reliable path.
+Browser voice input is optional in the web app. When enabled in the local settings panel, StreetSpeak AI feature-detects the browser's built-in speech recognition support. If the browser does not expose a compatible speech recognition API, the app shows an unsupported status and typed input remains the reliable path.
 
-When supported, the browser produces a text transcript and StreetSpeak AI sends that transcript through the same mock command parser used by typed input. StreetSpeak AI does not use ElevenLabs, does not require speech API keys, does not store raw audio, and does not upload raw audio to a StreetSpeak server. Browser-native speech behavior can vary by browser and device.
+When supported, the browser produces a text transcript and StreetSpeak AI sends that transcript through the same mock command parser used by typed input. StreetSpeak AI does not use ElevenLabs, does not require speech API keys, does not store raw audio, and does not send raw audio to a StreetSpeak server. Browser-native speech behavior can vary by browser and device.
 
 ## First-Run Onboarding And Local Settings
 
@@ -79,6 +80,8 @@ The local settings panel includes:
 - Audit timeline show/hide.
 - Reset demo state.
 - Reset onboarding acknowledgement.
+- Clear audit timeline.
+- Reset all local demo data.
 
 No accounts are created. Nothing is sent to a StreetSpeak server by the local demo.
 
@@ -88,6 +91,7 @@ Stored locally in browser storage:
 
 - First-run onboarding acknowledgement.
 - Local demo settings for browser voice input and audit timeline visibility.
+- Redacted audit events from mock command, routing, ticket, safety, confirmation, and mock execution flows.
 
 Not stored:
 
@@ -97,6 +101,17 @@ Not stored:
 - Real market data.
 - Live orders.
 - Trade recommendations.
+
+Receipt and audit exports are generated locally from the current browser state. The demo can copy a Markdown receipt to the clipboard or download JSON files, but it does not upload exports, create public URLs, or send receipts to a StreetSpeak server. Every receipt states: `No live broker order was placed.`
+
+To clear local data from the app, use the local settings and receipt/export controls:
+
+- `Reset demo state` clears transient command fields.
+- `Reset onboarding` removes the first-run acknowledgement.
+- `Clear audit timeline` removes persisted redacted audit events.
+- `Reset all local demo data` removes onboarding, settings, transient demo state, and persisted audit events.
+
+Browser site-data controls can also clear `localhost` storage.
 
 ## Unsupported Today
 
@@ -112,12 +127,16 @@ ElevenLabs voice support is also not implemented yet.
 
 StreetSpeak AI is not affiliated with Robinhood, Public, ElevenLabs, or any broker or voice provider.
 
+See [docs/architecture/robinhood-readiness.md](docs/architecture/robinhood-readiness.md) for the pre-Robinhood readiness notes. The current repository has no Robinhood MCP, no live trading path, and no real broker API integration.
+
 ## Safety Position
 
 - No investment advice.
 - No trade recommendations.
 - No live trading in this scaffold.
 - No plaintext secret storage.
+- No broker credentials or API keys.
+- No raw audio storage by StreetSpeak AI.
 - Explicit opt-in will be required before any future live execution work.
 - Future live execution must require specific confirmation phrases, not generic responses like "yes" or "do it".
 
@@ -163,7 +182,7 @@ Useful project structure:
 - `packages/core` - command routing, quote/portfolio mocks, and desk orchestration.
 - `packages/orders` - order ticket types and validation.
 - `packages/safety` - safety review and confirmation contracts.
-- `packages/audit` - audit event types and redaction helpers.
+- `packages/audit` - audit event types, redaction helpers, audit exports, and mock receipt exports.
 - `packages/brokers` - mock-only broker adapter interfaces.
 - `packages/voice` - voice transcript and provider interfaces.
 - `docs` - architecture, legal, security, and collaboration notes.

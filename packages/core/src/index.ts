@@ -499,7 +499,9 @@ export async function submitMockTradingDeskConfirmation(
       ...state,
       status: "confirmation_rejected",
       message:
-        "Confirmation rejected. Mock submission requires the exact challenge phrase and code.",
+        confirmation.reason === "generic_confirmation"
+          ? "Confirmation rejected. Generic confirmations never submit an order; use the exact challenge phrase and code for mock-only submission."
+          : "Confirmation rejected. Mock submission requires the exact challenge phrase and code.",
       challenge: {
         ...state.challenge,
         status: confirmation.status

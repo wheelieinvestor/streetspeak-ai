@@ -1,3 +1,12 @@
+import {
+  createAuditTimelineExport,
+  redactAuditPayload,
+  type AuditEvent,
+  type AuditEventActor,
+  type AuditEventType,
+  type AuditTimelineExport
+} from "@streetspeak-ai/audit";
+
 export const ONBOARDING_VERSION = "ssai-local-demo-v1";
 
 export type OnboardingAcknowledgementId =
@@ -86,11 +95,30 @@ export const DEMO_SAFETY_FLAGS: DemoSafetyFlags = {
 
 const ONBOARDING_STORAGE_KEY = "streetspeak-ai:onboarding:v1";
 const SETTINGS_STORAGE_KEY = "streetspeak-ai:settings:v1";
+const AUDIT_TIMELINE_STORAGE_KEY = "streetspeak-ai:audit-timeline:v1";
 const TRANSIENT_DEMO_STORAGE_KEYS = [
   "streetspeak-ai:last-command:v1",
   "streetspeak-ai:last-confirmation:v1",
   "streetspeak-ai:last-voice-transcript:v1"
 ] as const;
+
+const AUDIT_EVENT_TYPES: readonly AuditEventType[] = [
+  "command.received",
+  "command.routed",
+  "order.ticket.created",
+  "safety.reviewed",
+  "confirmation.challenge.created",
+  "confirmation.accepted",
+  "confirmation.rejected",
+  "mock.execution.requested",
+  "mock.execution.submitted"
+];
+
+const AUDIT_EVENT_ACTORS: readonly AuditEventActor[] = [
+  "user",
+  "system",
+  "mock_broker"
+];
 
 export function getBrowserLocalStorage(): LocalDemoStorage | null {
   if (typeof window === "undefined") {
@@ -216,8 +244,106 @@ export function resetDemoState(
   return createDefaultDemoRuntimeState();
 }
 
+export function loadAuditTimeline(
+  storage: LocalDemoStorage | null
+): readonly AuditEvent[] {
+  if (!storage) {
+    return [];
+  }
+
+  const raw = storage.getItem(AUDIT_TIMELINE_STORAGE_KEY);
+
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.flatMap((event) => {
+      const normalized = normalizeAuditEvent(event);
+
+      return normalized ? [normalized] : [];
+    });
+  } catch {
+    return [];
+  }
+}
+
+export function appendAuditEvent(
+  storage: LocalDemoStorage | null,
+  event: AuditEvent
+): readonly AuditEvent[] {
+  return appendAuditEvents(storage, [event]);
+}
+
+export function appendAuditEvents(
+  storage: LocalDemoStorage | null,
+  events: readonly AuditEvent[]
+): readonly AuditEvent[] {
+  const existingEvents = loadAuditTimeline(storage);
+  const seenEventIds = new Set(existingEvents.map((event) => event.id));
+  const nextEvents = [...existingEvents];
+
+  for (const event of events) {
+    const normalized = normalizeAuditEvent(event);
+
+    if (!normalized || seenEventIds.has(normalized.id)) {
+      continue;
+    }
+
+    nextEvents.push(normalized);
+    seenEventIds.add(normalized.id);
+  }
+
+  saveAuditTimeline(storage, nextEvents);
+
+  return nextEvents;
+}
+
+export function clearAuditTimeline(
+  storage: LocalDemoStorage | null
+): readonly AuditEvent[] {
+  storage?.removeItem(AUDIT_TIMELINE_STORAGE_KEY);
+
+  return [];
+}
+
+export function exportAuditTimeline(
+  storage: LocalDemoStorage | null,
+  options: { readonly now?: Date } = {}
+): AuditTimelineExport {
+  return createAuditTimelineExport(loadAuditTimeline(storage), options);
+}
+
+export function resetAllDemoData(
+  storage: LocalDemoStorage | null
+): DemoRuntimeState {
+  resetDemoState(storage);
+  resetOnboardingAcceptance(storage);
+  clearAuditTimeline(storage);
+  storage?.removeItem(SETTINGS_STORAGE_KEY);
+
+  return createDefaultDemoRuntimeState();
+}
+
 export function getDemoSafetyFlags(): DemoSafetyFlags {
   return DEMO_SAFETY_FLAGS;
+}
+
+function saveAuditTimeline(
+  storage: LocalDemoStorage | null,
+  events: readonly AuditEvent[]
+): void {
+  if (!storage) {
+    return;
+  }
+
+  storage.setItem(AUDIT_TIMELINE_STORAGE_KEY, JSON.stringify(events));
 }
 
 function normalizeDemoSettings(candidate: Partial<DemoSettings>): DemoSettings {
@@ -246,4 +372,53 @@ function isValidOnboardingAcceptance(
       candidate.acknowledgements?.includes(acknowledgement.id)
     )
   );
+}
+
+function normalizeAuditEvent(candidate: unknown): AuditEvent | null {
+  if (!isRecord(candidate)) {
+    return null;
+  }
+
+  const id = candidate.id;
+  const type = candidate.type;
+  const occurredAt = candidate.occurredAt;
+  const actor = candidate.actor;
+  const payload = candidate.payload;
+
+  if (
+    typeof id !== "string" ||
+    typeof occurredAt !== "string" ||
+    !isAuditEventType(type) ||
+    !isAuditEventActor(actor) ||
+    !isRecord(payload)
+  ) {
+    return null;
+  }
+
+  return {
+    id,
+    type,
+    occurredAt,
+    actor,
+    redacted: true,
+    payload: redactAuditPayload(payload)
+  };
+}
+
+function isAuditEventType(value: unknown): value is AuditEventType {
+  return (
+    typeof value === "string" &&
+    AUDIT_EVENT_TYPES.includes(value as AuditEventType)
+  );
+}
+
+function isAuditEventActor(value: unknown): value is AuditEventActor {
+  return (
+    typeof value === "string" &&
+    AUDIT_EVENT_ACTORS.includes(value as AuditEventActor)
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
