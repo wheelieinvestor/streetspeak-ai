@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@streetspeak-ai/core": "workspace:*"
+    "@streetspeak-ai/core": "workspace:*",
+    "@streetspeak-ai/voice": "workspace:*"
   },
   "devDependencies": {}
 }

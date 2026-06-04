@@ -17,6 +17,9 @@ It is not an investment adviser, broker, signal service, or recommendation engin
 StreetSpeak AI v0.1 is a local mock trading desk demo. It can:
 
 - Route typed mock portfolio, quote, and share-quantity equity order commands.
+- Optionally capture browser-native speech transcripts when the user's browser supports it.
+- Require first-run local safety onboarding before the demo flow opens.
+- Store onboarding acknowledgement and demo settings in local browser storage only.
 - Show a static/fake mock portfolio and static/fake mock quotes for `HOOD`, `SPY`, `NVDA`, `AAPL`, and `SOFI`.
 - Build mock market or limit equity order tickets for supported share-quantity commands.
 - Run every ticket through a safety review.
@@ -42,15 +45,58 @@ pnpm --filter @streetspeak-ai/web dev
 
 Open the local Vite URL and try commands such as:
 
-- `show my portfolio`
-- `how much mock buying power do I have`
-- `show me a quote for NVDA`
 - `buy 5 HOOD`
 - `sell 2 SOFI`
 - `build a limit order to buy 3 AAPL at 175`
+- `show my portfolio`
+- `what is HOOD trading at`
+- `how much mock buying power do I have`
+- `show me a quote for NVDA`
 - `sell 1 SPY at market`
+- `buy $500 of HOOD`
 
 For order commands, copy the exact confirmation phrase/code shown by the app. A phrase without the code, an expired challenge, or generic text will not submit even the mock order.
+
+See [docs/demo-script.md](docs/demo-script.md) for a 2-minute reviewer walkthrough.
+
+## Browser Voice Input
+
+Browser voice input is optional and local to the web app. When enabled in the local settings panel, StreetSpeak AI feature-detects the browser's built-in speech recognition support. If the browser does not expose a compatible speech recognition API, the app shows an unsupported status and typed input remains the reliable path.
+
+When supported, the browser produces a text transcript and StreetSpeak AI sends that transcript through the same mock command parser used by typed input. StreetSpeak AI does not use ElevenLabs, does not require speech API keys, does not store raw audio, and does not upload raw audio to a StreetSpeak server. Browser-native speech behavior can vary by browser and device.
+
+## First-Run Onboarding And Local Settings
+
+The local web app requires a first-run safety acknowledgement before using the demo flow. The acknowledgement states that StreetSpeak AI is not investment advice, is not affiliated with Robinhood, Public, ElevenLabs, or any broker, is mock-only today, will not place a live broker order, can make parsing or transcription mistakes, and requires the user to review every ticket and confirmation.
+
+The acknowledgement is stored only in browser local storage. The settings panel can reset the acknowledgement for demos or testing.
+
+The local settings panel includes:
+
+- Mock mode status, locked on.
+- Live trading status, unavailable and disabled.
+- Browser voice input enable/disable.
+- Audit timeline show/hide.
+- Reset demo state.
+- Reset onboarding acknowledgement.
+
+No accounts are created. Nothing is sent to a StreetSpeak server by the local demo.
+
+## Local Data Storage
+
+Stored locally in browser storage:
+
+- First-run onboarding acknowledgement.
+- Local demo settings for browser voice input and audit timeline visibility.
+
+Not stored:
+
+- API keys, broker credentials, account credentials, or session tokens.
+- Raw audio.
+- Real broker account data.
+- Real market data.
+- Live orders.
+- Trade recommendations.
 
 ## Unsupported Today
 
@@ -61,6 +107,8 @@ StreetSpeak AI v0.1 does not support notional/dollar-based final tickets. A comm
 Robinhood Agentic Trading through MCP is planned for a future phase, starting with a read-only adapter. It is not implemented yet.
 
 Public adapter support is also planned for a later phase. It is not implemented yet.
+
+ElevenLabs voice support is also not implemented yet.
 
 StreetSpeak AI is not affiliated with Robinhood, Public, ElevenLabs, or any broker or voice provider.
 

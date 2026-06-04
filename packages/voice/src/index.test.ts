@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  createBrowserSpeechTranscript,
   createMockTranscript,
   createMockVoiceProvider,
+  detectBrowserSpeechSupport,
   isActionableTranscript
 } from "./index.js";
 
@@ -37,6 +39,47 @@ describe("voice abstraction", () => {
 
     expect(provider.mode).toBe("mock");
     expect(transcript.provider).toBe("mock");
+  });
+
+  it("detects browser-native speech support without external API keys", () => {
+    expect(
+      detectBrowserSpeechSupport({
+        SpeechRecognition: class MockSpeechRecognition {}
+      })
+    ).toEqual({
+      supported: true,
+      provider: "browser_native",
+      transcriptProvider: "browser",
+      usesExternalApiKey: false,
+      rawAudioStoredByStreetSpeak: false
+    });
+  });
+
+  it("reports unsupported browser speech when recognition is unavailable", () => {
+    expect(detectBrowserSpeechSupport({})).toEqual({
+      supported: false,
+      reason: "recognition_api_unavailable",
+      usesExternalApiKey: false,
+      rawAudioStoredByStreetSpeak: false
+    });
+  });
+
+  it("marks browser-native transcripts as actionable when confidence is sufficient", () => {
+    const transcript = createBrowserSpeechTranscript(" buy 5 HOOD ", {
+      id: "browser-transcript-1",
+      confidence: 0.91,
+      now: new Date("2026-01-01T00:00:00.000Z")
+    });
+
+    expect(transcript).toEqual({
+      id: "browser-transcript-1",
+      text: "buy 5 HOOD",
+      confidence: 0.91,
+      provider: "browser",
+      capturedAt: "2026-01-01T00:00:00.000Z",
+      status: "transcribed"
+    });
+    expect(isActionableTranscript(transcript)).toBe(true);
   });
 });
 
