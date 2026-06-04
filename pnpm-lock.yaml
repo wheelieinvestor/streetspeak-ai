@@ -37,6 +37,9 @@ importers:
       "@streetspeak-ai/core":
         specifier: workspace:*
         version: link:../../packages/core
+      "@streetspeak-ai/voice":
+        specifier: workspace:*
+        version: link:../../packages/voice
 
   packages/audit: {}
 

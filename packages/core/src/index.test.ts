@@ -195,6 +195,36 @@ describe("core command routing", () => {
     ]);
   });
 
+  it("routes typed and voice transcripts through the same mock parser", async () => {
+    const typedState = await createMockTradingDeskTurn("buy 5 HOOD", {
+      commandId: "cmd-keyboard",
+      ticketId: "ticket-keyboard",
+      challengeId: "challenge-keyboard",
+      challengeCode: "1111",
+      source: "keyboard",
+      now: new Date("2026-01-01T00:00:00.000Z")
+    });
+    const voiceState = await createMockTradingDeskTurn("buy 5 HOOD", {
+      commandId: "cmd-voice",
+      ticketId: "ticket-voice",
+      challengeId: "challenge-voice",
+      challengeCode: "2222",
+      source: "voice",
+      now: new Date("2026-01-01T00:00:00.000Z")
+    });
+
+    expect(typedState.parse).toEqual(voiceState.parse);
+    expect(typedState.route).toEqual(voiceState.route);
+    expect(voiceState.command.source).toBe("voice");
+    expect(voiceState.ticket).toMatchObject({
+      symbol: "HOOD",
+      side: "buy",
+      quantity: 5,
+      mode: "mock"
+    });
+    expect(voiceState.session.liveTradingEnabled).toBe(false);
+  });
+
   it("runs the mock desk happy path after exact confirmation", async () => {
     const state = await createMockTradingDeskTurn("buy 5 HOOD", {
       commandId: "cmd-1",
