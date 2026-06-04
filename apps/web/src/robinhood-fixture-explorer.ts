@@ -20,6 +20,11 @@ export interface V01MockDemoStatusItem {
   readonly detail: string;
 }
 
+export interface V01SafetyChecklistItem {
+  readonly label: string;
+  readonly detail: string;
+}
+
 export interface RobinhoodFixtureExplorerModel {
   readonly disabledStatus: BrokerAdapterStatus;
   readonly fixtureStatus: BrokerAdapterStatus;
@@ -49,8 +54,9 @@ export const V01_MOCK_DEMO_STATUS: readonly V01MockDemoStatusItem[] = [
   },
   {
     label: "Browser voice input",
-    status: "optional/browser-native",
-    detail: "No StreetSpeak raw-audio storage or external voice API is used."
+    status: "works where supported",
+    detail:
+      "Browser-native speech is feature-detected; typed input remains the reliable path."
   },
   {
     label: "Audit timeline",
@@ -69,12 +75,13 @@ export const V01_MOCK_DEMO_STATUS: readonly V01MockDemoStatusItem[] = [
   },
   {
     label: "Real Robinhood connection",
-    status: "not active",
-    detail: "Future read-only MCP support is a separate gated phase."
+    status: "unavailable by default",
+    detail:
+      "Read-only MCP is externally managed and not claimed as verified unless a redacted smoke test is run."
   },
   {
     label: "Order review",
-    status: "not active",
+    status: "not implemented",
     detail: "Robinhood order review is not implemented."
   },
   {
@@ -84,10 +91,42 @@ export const V01_MOCK_DEMO_STATUS: readonly V01MockDemoStatusItem[] = [
   }
 ];
 
+export const V01_SAFETY_CHECKLIST: readonly V01SafetyChecklistItem[] = [
+  {
+    label: "No live trading",
+    detail: "Live trading flags remain false and unavailable."
+  },
+  {
+    label: "No Robinhood order actions",
+    detail:
+      "Order review, placement, submission, execution, and cancel are absent."
+  },
+  {
+    label: "No broker login",
+    detail:
+      "No broker credential, API key, token, or MCP URL fields are rendered."
+  },
+  {
+    label: "Exact mock confirmation",
+    detail:
+      "Generic confirmations are rejected; the exact phrase and code are required."
+  },
+  {
+    label: "Local-only exports",
+    detail:
+      "Audit and receipt exports are generated locally and state no live order was placed."
+  },
+  {
+    label: "No persisted real account data",
+    detail:
+      "Read-only MCP data stays in memory by default and raw identifiers are redacted."
+  }
+];
+
 const ROBINHOOD_FIXTURE_EDUCATION: readonly string[] = [
   "StreetSpeak AI is currently mock-first.",
   "The Robinhood panel is fixture-only and static.",
-  "Real Robinhood read-only MCP connection is a future gated phase.",
+  "The real Robinhood MCP panel is read-only and unavailable by default.",
   "Order review and live execution are separate future phases.",
   "No live broker order can be placed."
 ];

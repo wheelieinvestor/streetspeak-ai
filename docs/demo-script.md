@@ -1,6 +1,6 @@
 # StreetSpeak AI Mock Demo Script
 
-This is a 2-minute walkthrough for the local mock-only StreetSpeak AI demo. It does not connect to Robinhood, Public, ElevenLabs, a broker, a speech API, or real market data.
+This is a 2-3 minute walkthrough for the local mock-only StreetSpeak AI demo. It does not connect to Robinhood, Public, ElevenLabs, a broker, a speech API, or real market data by default.
 
 ## Setup
 
@@ -48,16 +48,26 @@ Open the local Vite URL shown in the terminal.
 
 9. Review the `v0.1 Mock Demo` status panel.
    - Confirm the mock trading desk is available.
+   - Confirm browser voice says it works only where supported.
    - Confirm the Robinhood fixture explorer is fixture-only.
-   - Confirm real Robinhood connection, order review, and live trading are not active.
+   - Confirm real Robinhood MCP read-only is unavailable by default unless externally configured.
+   - Confirm real Robinhood verified read-only status is not claimed unless a redacted smoke test was actually run.
+   - Confirm order review and live trading are not implemented.
 
-10. Review the `Robinhood Read-Only Fixture Explorer`.
+10. Review the `Real Robinhood MCP Read-Only Connection` panel.
+
+- Confirm the panel is separate from the mock trading desk and fixture explorer.
+- Confirm the default state is unavailable/unconfigured without an externally managed runtime client.
+- Confirm there is no broker login, credential field, token field, MCP URL field, order review, order placement, cancel order, or live execution.
+- Confirm the allowed query area is read-only only.
+
+11. Review the `Robinhood Read-Only Fixture Explorer`.
 
 - Confirm the panel shows static account summary, buying power, portfolio, positions, quote lookup, order history, tradability, and symbol search fixtures.
 - Confirm the adapter transport is `none` and credentials are not required.
 - Confirm no broker login, credential field, MCP URL field, order review, order placement, cancel order, or live execution action exists.
 
-11. Run `buy $500 of HOOD`.
+12. Run `buy $500 of HOOD`.
 
 - The app returns unsupported notional handling.
 - No final ticket is created and no dollar amount is converted into shares.
