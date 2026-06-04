@@ -3,6 +3,7 @@ import {
   createAuditTimelineExport,
   createAuditEvent,
   createMockTradeReceipt,
+  createRobinhoodReadOnlyAuditEvent,
   InMemoryAuditSink,
   NO_LIVE_BROKER_ORDER_PLACED_STATEMENT,
   redactAuditPayload,
@@ -38,6 +39,14 @@ describe("audit events", () => {
         accountIdentifier: "acct-identifier",
         brokerAccountId: "broker-account",
         brokerAccountIdentifier: "broker-account-identifier",
+        orderId: "sample-order-id",
+        brokerOrderId: "sample-broker-order-id",
+        rawOrderIdentifier: "sample-raw-order-id",
+        portfolioValue: 123456.78,
+        totalEquityValue: 123456.78,
+        buyingPower: 5000,
+        cashAvailable: 1200,
+        positions: [{ symbol: "HOOD", quantity: 99 }],
         symbol: "HOOD",
         side: "buy",
         quantity: 5,
@@ -47,20 +56,20 @@ describe("audit events", () => {
         rawAudioBlob: "blob",
         audioData: "audio-data",
         nested: {
-          accessToken: "access-token",
-          refreshToken: "refresh-token",
-          sessionToken: "session-token",
+          accessToken: "placeholder",
+          refreshToken: "placeholder",
+          sessionToken: "placeholder",
           privateKey: "private-key",
-          apiKey: "api-key",
-          authorization: "Bearer token",
-          password: "password",
-          secret: "secret",
+          apiKey: "placeholder",
+          authorization: "Bearer placeholder",
+          password: "placeholder",
+          secret: "placeholder",
           credential: "credential",
           safe: "visible"
         },
         events: [
           {
-            authorization: "Bearer token",
+            authorization: "Bearer placeholder",
             status: "blocked"
           }
         ]
@@ -71,6 +80,14 @@ describe("audit events", () => {
       accountIdentifier: "[REDACTED]",
       brokerAccountId: "[REDACTED]",
       brokerAccountIdentifier: "[REDACTED]",
+      orderId: "[REDACTED]",
+      brokerOrderId: "[REDACTED]",
+      rawOrderIdentifier: "[REDACTED]",
+      portfolioValue: "[REDACTED]",
+      totalEquityValue: "[REDACTED]",
+      buyingPower: "[REDACTED]",
+      cashAvailable: "[REDACTED]",
+      positions: "[REDACTED]",
       symbol: "HOOD",
       side: "buy",
       quantity: 5,
@@ -100,9 +117,30 @@ describe("audit events", () => {
     });
   });
 
+  it("creates Robinhood read-only audit events with action names only", () => {
+    const event = createRobinhoodReadOnlyAuditEvent("quote_read", {
+      id: "audit-robinhood-read-1",
+      now: new Date("2026-01-01T00:00:00.000Z")
+    });
+
+    expect(event).toEqual({
+      id: "audit-robinhood-read-1",
+      type: "robinhood.read_only.action",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      actor: "system",
+      redacted: true,
+      payload: {
+        action: "quote_read"
+      }
+    });
+    expect(JSON.stringify(event)).not.toContain("account");
+    expect(JSON.stringify(event)).not.toContain("portfolioValue");
+    expect(JSON.stringify(event)).not.toContain("orderId");
+  });
+
   it("redacts payloads when creating audit events", () => {
     const event = createAuditEvent("mock.execution.requested", {
-      token: "do-not-store",
+      token: "placeholder",
       ticketId: "ticket-1"
     });
 
@@ -121,7 +159,7 @@ describe("audit events", () => {
         {
           ticketId: "ticket-1",
           mockOrderId: "mock-order-1",
-          token: "do-not-store"
+          token: "placeholder"
         },
         {
           id: "audit-2",
@@ -224,7 +262,7 @@ describe("audit events", () => {
         },
         confirmationChallengeResult: {
           accepted: true,
-          token: "secret-token"
+          token: "placeholder"
         },
         mockBrokerResponse: {
           status: "mock_submitted",
@@ -272,7 +310,7 @@ describe("audit events", () => {
     expect(markdown).toContain(NO_LIVE_BROKER_ORDER_PLACED_STATEMENT);
     expect(markdown).toContain("audit-1");
     expect(markdown).not.toContain("broker-account");
-    expect(markdown).not.toContain("secret-token");
+    expect(markdown).not.toContain("placeholder");
     expect(markdown).not.toContain("audio-bytes");
   });
 });

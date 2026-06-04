@@ -43,6 +43,14 @@ import {
   V01_MOCK_DEMO_STATUS,
   type RobinhoodFixtureExplorerModel
 } from "./robinhood-fixture-explorer";
+import {
+  createRobinhoodMcpReadOnlyPanelModel,
+  getBrowserRobinhoodMcpReadOnlyClient,
+  loadRobinhoodMcpReadOnlyPanelModel,
+  type BrowserRobinhoodMcpReadOnlyClientHost,
+  type RobinhoodMcpReadOnlyPanelModel,
+  type RobinhoodMcpReadOnlyPanelQuery
+} from "./robinhood-mcp-readonly-panel";
 import "./styles.css";
 
 const EXAMPLE_COMMANDS = [
@@ -54,6 +62,12 @@ const EXAMPLE_COMMANDS = [
   "buy $500 of HOOD"
 ] as const;
 
+const DEFAULT_ROBINHOOD_MCP_QUERY: RobinhoodMcpReadOnlyPanelQuery = {
+  quoteSymbol: "HOOD",
+  tradabilitySymbol: "HOOD",
+  searchQuery: "hood"
+};
+
 const session = createMockSession();
 const app = document.querySelector<HTMLElement>("#app");
 
@@ -61,6 +75,10 @@ if (app) {
   const storage = getBrowserLocalStorage();
   const browserHost: BrowserSpeechHost | null =
     typeof window === "undefined" ? null : (window as BrowserSpeechHost);
+  const robinhoodMcpHost: BrowserRobinhoodMcpReadOnlyClientHost | null =
+    typeof window === "undefined"
+      ? null
+      : (window as BrowserRobinhoodMcpReadOnlyClientHost);
   let currentState: MockTradingDeskState | null = null;
   let settings = loadDemoSettings(storage);
   let persistedAuditTimeline = loadAuditTimeline(storage);
@@ -69,6 +87,12 @@ if (app) {
   let busy = false;
   let exportStatusMessage = "";
   let receiptMarkdownPreview = "";
+  let robinhoodMcpQuery = DEFAULT_ROBINHOOD_MCP_QUERY;
+  let robinhoodMcpBusy = false;
+  let robinhoodMcpPanel = createRobinhoodMcpReadOnlyPanelModel({
+    client: getBrowserRobinhoodMcpReadOnlyClient(robinhoodMcpHost),
+    query: robinhoodMcpQuery
+  });
   let voiceState = createInitialBrowserVoiceState(
     browserHost,
     settings.browserVoiceInputEnabled
@@ -97,6 +121,8 @@ if (app) {
       persistedAuditTimeline,
       exportStatusMessage,
       receiptMarkdownPreview,
+      robinhoodMcpPanel,
+      robinhoodMcpBusy,
       storageAvailable: storage !== null,
       voiceState
     });
@@ -250,6 +276,25 @@ if (app) {
     render();
   };
 
+  const refreshRobinhoodMcpPanel = async (
+    query: RobinhoodMcpReadOnlyPanelQuery
+  ): Promise<void> => {
+    robinhoodMcpQuery = query;
+    robinhoodMcpBusy = true;
+    robinhoodMcpPanel = {
+      ...robinhoodMcpPanel,
+      query
+    };
+    render();
+
+    robinhoodMcpPanel = await loadRobinhoodMcpReadOnlyPanelModel({
+      client: getBrowserRobinhoodMcpReadOnlyClient(robinhoodMcpHost),
+      query
+    });
+    robinhoodMcpBusy = false;
+    render();
+  };
+
   const bindEvents = (): void => {
     bindOnboardingEvents(storage, {
       onboardingChecks,
@@ -306,6 +351,18 @@ if (app) {
     );
     const resetAllDemoDataButton = app.querySelector<HTMLButtonElement>(
       "#reset-all-demo-data"
+    );
+    const robinhoodMcpForm = app.querySelector<HTMLFormElement>(
+      "#robinhood-mcp-readonly-form"
+    );
+    const robinhoodMcpQuoteInput = app.querySelector<HTMLInputElement>(
+      "#robinhood-mcp-quote-symbol"
+    );
+    const robinhoodMcpTradabilityInput = app.querySelector<HTMLInputElement>(
+      "#robinhood-mcp-tradability-symbol"
+    );
+    const robinhoodMcpSearchInput = app.querySelector<HTMLInputElement>(
+      "#robinhood-mcp-search-query"
     );
 
     commandForm?.addEventListener("submit", (event) => {
@@ -380,6 +437,21 @@ if (app) {
     downloadAuditButton?.addEventListener("click", downloadAuditJson);
 
     resetAllDemoDataButton?.addEventListener("click", resetEveryLocalDemoValue);
+
+    robinhoodMcpForm?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void refreshRobinhoodMcpPanel({
+        quoteSymbol:
+          robinhoodMcpQuoteInput?.value.trim() ||
+          DEFAULT_ROBINHOOD_MCP_QUERY.quoteSymbol,
+        tradabilitySymbol:
+          robinhoodMcpTradabilityInput?.value.trim() ||
+          DEFAULT_ROBINHOOD_MCP_QUERY.tradabilitySymbol,
+        searchQuery:
+          robinhoodMcpSearchInput?.value.trim() ||
+          DEFAULT_ROBINHOOD_MCP_QUERY.searchQuery
+      });
+    });
   };
 
   render();
@@ -398,6 +470,8 @@ interface MarkupOptions {
   readonly persistedAuditTimeline: readonly AuditEvent[];
   readonly exportStatusMessage: string;
   readonly receiptMarkdownPreview: string;
+  readonly robinhoodMcpPanel: RobinhoodMcpReadOnlyPanelModel;
+  readonly robinhoodMcpBusy: boolean;
   readonly storageAvailable: boolean;
   readonly voiceState: BrowserVoiceState;
 }
@@ -412,6 +486,8 @@ function createMarkup(options: MarkupOptions): string {
     persistedAuditTimeline,
     exportStatusMessage,
     receiptMarkdownPreview,
+    robinhoodMcpPanel,
+    robinhoodMcpBusy,
     storageAvailable,
     voiceState
   } = options;
@@ -444,6 +520,8 @@ function createMarkup(options: MarkupOptions): string {
       ${renderSettings(settings, storageAvailable)}
 
       ${renderV01MockDemoStatus()}
+
+      ${renderRobinhoodMcpReadOnlyPanel(robinhoodMcpPanel, robinhoodMcpBusy)}
 
       <section class="command-band" aria-label="mock command input">
         <div class="command-layout">
@@ -647,6 +725,210 @@ function renderVoiceInput(
           : ""
       }
     </div>
+  `;
+}
+
+function renderRobinhoodMcpReadOnlyPanel(
+  model: RobinhoodMcpReadOnlyPanelModel,
+  busy: boolean
+): string {
+  const status = model.status;
+  const accountRows =
+    model.accountSummaries.length === 0
+      ? `<li class="empty">No account summaries loaded. Identifiers remain redacted.</li>`
+      : model.accountSummaries
+          .map(
+            (account) => `
+              <li>
+                <strong>${escapeHtml(account.accountLabel)}</strong>
+                <span>${escapeHtml(account.accountType)} / ${escapeHtml(account.status)}</span>
+                <small>${escapeHtml(account.source)} - identifier redacted: ${String(account.accountIdentifierRedacted)}</small>
+              </li>
+            `
+          )
+          .join("");
+  const portfolio = model.portfolioSnapshot;
+  const quote = model.quoteLookup;
+  const tradability = model.tradabilityCheck;
+
+  return `
+    <section class="fixture-explorer real-readonly-panel" aria-label="Real Robinhood MCP Read-Only Connection">
+      <div class="fixture-hero">
+        <div>
+          <p class="eyebrow">Externally managed MCP</p>
+          <h2>${escapeHtml(model.title)}</h2>
+          <p class="status-copy">This panel is read-only, separate from the mock trading desk and fixture explorer, and stores no Robinhood credentials or real read-only data in localStorage by default.</p>
+        </div>
+        <div class="mode-stack" aria-label="Robinhood MCP read-only status">
+          <span class="badge">${escapeHtml(model.readOnlyBadge)}</span>
+          <span class="badge badge-danger">No live trading</span>
+          <span class="badge badge-danger">No order actions</span>
+        </div>
+      </div>
+
+      <section class="fixture-section" aria-label="Robinhood MCP adapter status">
+        <div class="fixture-section-heading">
+          <h3>Read-Only MCP Status</h3>
+          <span>${escapeHtml(status.state)}</span>
+        </div>
+        <p class="empty">MCP configuration is managed outside StreetSpeak AI. No broker login form, API key field, token field, MCP URL field, order review, order placement, cancel order, or live execution is available here.</p>
+        <dl class="detail-list fixture-status-list">
+          <div><dt>Source</dt><dd>${escapeHtml(model.source)}</dd></div>
+          <div><dt>Transport</dt><dd>${escapeHtml(status.transport)}</dd></div>
+          <div><dt>Connection</dt><dd>${status.state === "available" ? "available" : "unavailable / unconfigured"}</dd></div>
+          <div><dt>Credentials</dt><dd>${escapeHtml(status.credentialsManagement ?? "externally managed / not stored by StreetSpeak")}</dd></div>
+          <div><dt>Credential fields required</dt><dd>${model.credentialFieldsRequired.length}</dd></div>
+          <div><dt>Storage policy</dt><dd>${escapeHtml(model.storagePolicy)}</dd></div>
+          <div><dt>Live execution available</dt><dd>${String(status.liveExecutionAvailable)}</dd></div>
+          <div><dt>Order review available</dt><dd>${String(status.orderReviewAvailable)}</dd></div>
+          <div><dt>Order placement available</dt><dd>${String(status.orderPlacementAvailable)}</dd></div>
+          <div><dt>Cancel order available</dt><dd>${String(status.cancelOrderAvailable)}</dd></div>
+        </dl>
+        ${renderList("Read-only status errors", model.errors, "warning-list")}
+      </section>
+
+      <section class="fixture-section" aria-label="Robinhood MCP read-only query controls">
+        <div class="fixture-section-heading">
+          <h3>Read-Only Queries</h3>
+          <span>account / portfolio / positions / quote / order history / tradability / search</span>
+        </div>
+        <form id="robinhood-mcp-readonly-form" class="command-form">
+          <div class="command-row">
+            <label for="robinhood-mcp-quote-symbol">Quote symbol</label>
+            <input id="robinhood-mcp-quote-symbol" type="text" value="${escapeHtml(model.query.quoteSymbol)}" autocomplete="off" />
+            <label for="robinhood-mcp-tradability-symbol">Tradability symbol</label>
+            <input id="robinhood-mcp-tradability-symbol" type="text" value="${escapeHtml(model.query.tradabilitySymbol)}" autocomplete="off" />
+            <label for="robinhood-mcp-search-query">Search query</label>
+            <input id="robinhood-mcp-search-query" type="text" value="${escapeHtml(model.query.searchQuery)}" autocomplete="off" />
+            <button type="submit" ${busy ? "disabled" : ""}>Refresh Read-Only Data</button>
+          </div>
+        </form>
+        <p class="fixture-note">The refresh action can only call allowed read-only MCP tools. It does not review, place, execute, or cancel orders.</p>
+      </section>
+
+      <div class="fixture-grid">
+        <section class="fixture-section" aria-label="Robinhood MCP redacted account summaries">
+          <div class="fixture-section-heading"><h3>Account Summary</h3><span>redacted identifiers</span></div>
+          <ul class="position-list fixture-list">${accountRows}</ul>
+        </section>
+
+        <section class="fixture-section" aria-label="Robinhood MCP portfolio summary">
+          <div class="fixture-section-heading"><h3>Portfolio Summary</h3><span>in-memory only</span></div>
+          ${
+            portfolio
+              ? `<dl class="detail-list">
+                  <div><dt>Total equity</dt><dd>${formatCurrency(portfolio.totalEquityValue)}</dd></div>
+                  <div><dt>Buying power</dt><dd>${formatCurrency(portfolio.buyingPower.buyingPower)}</dd></div>
+                  <div><dt>Account identifier redacted</dt><dd>${String(portfolio.accountIdentifierRedacted)}</dd></div>
+                  <div><dt>Source</dt><dd>${escapeHtml(portfolio.source)}</dd></div>
+                </dl>`
+              : `<p class="empty">No portfolio data loaded.</p>`
+          }
+        </section>
+
+        <section class="fixture-section" aria-label="Robinhood MCP positions">
+          <div class="fixture-section-heading"><h3>Positions</h3><span>read-only</span></div>
+          <ul class="position-list fixture-list">
+            ${
+              model.positions.length === 0
+                ? `<li class="empty">No positions loaded.</li>`
+                : model.positions
+                    .map(
+                      (position) => `
+                        <li>
+                          <strong>${escapeHtml(position.symbol)}</strong>
+                          <span>${position.quantity} shares</span>
+                          <span>${formatCurrency(position.marketValue)}</span>
+                          <small>${escapeHtml(position.source)}</small>
+                        </li>
+                      `
+                    )
+                    .join("")
+            }
+          </ul>
+        </section>
+
+        <section class="fixture-section" aria-label="Robinhood MCP quote lookup">
+          <div class="fixture-section-heading"><h3>Quote Lookup</h3><span>read-only</span></div>
+          ${
+            quote
+              ? `<dl class="detail-list">
+                  <div><dt>Symbol</dt><dd>${escapeHtml(quote.symbol)}</dd></div>
+                  <div><dt>Last</dt><dd>${formatCurrency(quote.last)}</dd></div>
+                  <div><dt>Bid / Ask</dt><dd>${formatCurrency(quote.bid)} / ${formatCurrency(quote.ask)}</dd></div>
+                  <div><dt>Source</dt><dd>${escapeHtml(quote.source)}</dd></div>
+                </dl>`
+              : `<p class="empty">No quote loaded.</p>`
+          }
+        </section>
+
+        <section class="fixture-section" aria-label="Robinhood MCP order history">
+          <div class="fixture-section-heading"><h3>Order History</h3><span>read-only / IDs redacted</span></div>
+          <ul class="audit-list fixture-list">
+            ${
+              model.orderHistory.length === 0
+                ? `<li class="empty">No order history loaded.</li>`
+                : model.orderHistory
+                    .map(
+                      (order) => `
+                        <li>
+                          <span>${escapeHtml(order.status)} ${escapeHtml(order.side)} ${order.quantity} ${escapeHtml(order.symbol)}</span>
+                          <small>${escapeHtml(order.id)} / raw order ID redacted: ${String(order.rawOrderIdentifierRedacted)}</small>
+                        </li>
+                      `
+                    )
+                    .join("")
+            }
+          </ul>
+        </section>
+
+        <section class="fixture-section" aria-label="Robinhood MCP tradability check">
+          <div class="fixture-section-heading"><h3>Tradability Check</h3><span>read-only</span></div>
+          ${
+            tradability
+              ? `<dl class="detail-list">
+                  <div><dt>Symbol</dt><dd>${escapeHtml(tradability.symbol)}</dd></div>
+                  <div><dt>Tradable</dt><dd>${String(tradability.tradable)}</dd></div>
+                  <div><dt>Reason</dt><dd>${escapeHtml(tradability.reason)}</dd></div>
+                  <div><dt>Source</dt><dd>${escapeHtml(tradability.source)}</dd></div>
+                </dl>`
+              : `<p class="empty">No tradability result loaded.</p>`
+          }
+        </section>
+
+        <section class="fixture-section" aria-label="Robinhood MCP symbol search">
+          <div class="fixture-section-heading"><h3>Symbol Search</h3><span>read-only</span></div>
+          <ul class="audit-list fixture-list">
+            ${
+              model.symbolSearchResults.length === 0
+                ? `<li class="empty">No search results loaded.</li>`
+                : model.symbolSearchResults
+                    .map(
+                      (result) => `
+                        <li>
+                          <span>${escapeHtml(result.symbol)} - ${escapeHtml(result.name)}</span>
+                          <small>${escapeHtml(result.assetClass)} / tradable: ${String(result.tradable)} / ${escapeHtml(result.source)}</small>
+                        </li>
+                      `
+                    )
+                    .join("")
+            }
+          </ul>
+        </section>
+
+        <section class="fixture-section" aria-label="Robinhood MCP redacted action audit summary">
+          <div class="fixture-section-heading"><h3>Redacted Action Audit</h3><span>action names only</span></div>
+          <ul class="audit-list fixture-list">
+            ${model.actionAuditEvents
+              .map(
+                (event) =>
+                  `<li><span>${escapeHtml(event.payload.action)}</span><small>${escapeHtml(formatDate(event.occurredAt))}</small></li>`
+              )
+              .join("")}
+          </ul>
+        </section>
+      </div>
+    </section>
   `;
 }
 

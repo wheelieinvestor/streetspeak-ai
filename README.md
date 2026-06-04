@@ -4,7 +4,7 @@ Voice-native trading desk for AI agents.
 
 StreetSpeak AI is a local-first, open-source workspace for self-directed traders who want to ask portfolio and market questions, assemble mock order tickets by voice, and review risk before any future execution workflow.
 
-The local demo remains mock-only. The broker package includes a disabled-by-default, fixture-only Robinhood read-only scaffold for future integration planning, but it does not implement Robinhood MCP, broker login flows, live trading, trade recommendations, or any system that can place orders.
+The local demo remains mock-only. The broker package now includes a strictly read-only Robinhood MCP adapter boundary for externally managed MCP clients plus the fixture-only explorer. It does not implement broker login flows, order review, order placement, cancel order, live trading, trade recommendations, or any system that can place orders.
 
 ## Who It Is For
 
@@ -28,7 +28,8 @@ StreetSpeak AI v0.1 is a local mock trading desk demo. It can:
 - Persist redacted local audit events for command, routing, ticket, safety, confirmation, and mock execution events.
 - Export local-only audit JSON and mock receipt Markdown/JSON.
 - Show a separate `Robinhood Read-Only Fixture Explorer` panel backed only by static fixtures from `packages/brokers`.
-- Expose disabled-by-default Robinhood read-only adapter contracts; the fixture explorer is not a live broker connection.
+- Show a separate `Real Robinhood MCP Read-Only Connection` panel for externally managed MCP clients. The default state is unavailable/unconfigured unless the host page provides a read-only client at runtime.
+- Expose Robinhood read-only adapter contracts for fixture data and externally managed MCP read-only data. Neither path includes order review, order placement, cancel order, or live execution.
 
 Mock mode is the default first experience. Live execution is unavailable and must remain disabled by default in future phases.
 
@@ -60,7 +61,11 @@ Open the local Vite URL and try commands such as:
 
 For order commands, copy the exact confirmation phrase/code shown by the app. A phrase without the code, an expired challenge, or generic text will not submit even the mock order.
 
-After the mock desk, the app shows a `v0.1 Mock Demo` status panel and the `Robinhood Read-Only Fixture Explorer`. The Robinhood panel displays static account summary, buying power, portfolio, positions, quote lookup, order history, tradability, and symbol search fixtures. Every value is fixture-only: it is not real Robinhood account data, broker data, or market data, and it has no MCP transport, broker login, credential form, order review, order placement, or cancel-order behavior.
+After the mock desk, the app shows a `v0.1 Mock Demo` status panel, the `Robinhood Read-Only Fixture Explorer`, and the `Real Robinhood MCP Read-Only Connection` panel.
+
+The fixture explorer displays static account summary, buying power, portfolio, positions, quote lookup, order history, tradability, and symbol search fixtures. Every fixture value is static and fake: it is not real Robinhood account data, broker data, or market data, and it has no MCP transport, broker login, credential form, order review, order placement, or cancel-order behavior.
+
+The MCP panel is read-only and unavailable by default. If a developer provides an externally managed MCP client at runtime, it can request only `get_accounts`, `get_portfolio`, `get_equity_positions`, `get_equity_quotes`, `get_equity_orders`, `get_equity_tradability`, and `search`. StreetSpeak AI stores no MCP URL, token, broker credential, raw account identifier, raw portfolio value, raw holding, raw order ID, or raw MCP output in the repo or browser local storage by default.
 
 See [docs/demo-script.md](docs/demo-script.md) and [docs/v0.1-demo-checklist.md](docs/v0.1-demo-checklist.md) for reviewer walkthroughs.
 
@@ -96,13 +101,14 @@ Stored locally in browser storage:
 - First-run onboarding acknowledgement.
 - Local demo settings for browser voice input and audit timeline visibility.
 - Redacted audit events from mock command, routing, ticket, safety, confirmation, and mock execution flows.
+- Redacted action/timestamp audit events for real Robinhood MCP read-only panel actions, if a runtime client is externally configured.
 
 Not stored:
 
 - API keys, broker credentials, account credentials, or session tokens.
 - Raw audio.
-- Real broker account data.
-- Real market data.
+- Real broker account data, account identifiers, portfolio values, holdings, order IDs, or raw MCP output.
+- Real market data snapshots.
 - Live orders.
 - Trade recommendations.
 
@@ -121,11 +127,11 @@ Browser site-data controls can also clear `localhost` storage.
 
 StreetSpeak AI v0.1 does not support notional/dollar-based final tickets. A command such as `buy $500 of HOOD` is returned as unsupported instead of being converted to shares. Future notional support must perform quote lookup, explicit share conversion, and user confirmation before creating a final ticket.
 
-## Planned Broker Support
+## Robinhood MCP Read-Only Support
 
-Robinhood Agentic Trading through MCP is planned for a future phase. The current repository only has a disabled-by-default, fixture-only Robinhood read-only adapter scaffold in `packages/brokers`.
+Robinhood Agentic Trading through MCP is supported only as a read-only adapter boundary. StreetSpeak AI assumes MCP is configured outside the repo/app by the user or developer. It does not commit MCP URLs, tokens, credentials, auth config, broker login UI, or API key fields.
 
-The v0.1 web app includes a read-only fixture explorer so reviewers can inspect the future data shape without implying that Robinhood is connected. The explorer uses local static fixtures only and requires no credentials, API keys, tokens, or MCP URLs.
+The v0.1 web app includes both a read-only fixture explorer and a separate real Robinhood MCP read-only panel. The real panel stays unavailable/unconfigured unless an external runtime client is injected by the host environment. When available, it is limited to account, portfolio, positions, quotes, order history, tradability, and search reads.
 
 The required future sequence is:
 
@@ -133,7 +139,7 @@ The required future sequence is:
 2. Order review: separately approved reviewable tickets and safety checks, still without live execution.
 3. Live execution: separately approved live trading work only after the previous gates exist.
 
-The current Robinhood scaffold has no MCP transport, broker login, credentials, real account data, real market data, order review, order placement, or cancel-order methods.
+The current Robinhood MCP boundary has no broker login, stored credentials, order review, order placement, cancel-order method, or live execution method. Real read-only account data is in-memory only by default and must not be copied into fixtures, tests, screenshots, docs, PR bodies, or handoffs.
 
 Public adapter support is also planned for a later phase. It is not implemented yet.
 
@@ -141,7 +147,7 @@ ElevenLabs voice support is also not implemented yet.
 
 StreetSpeak AI is not affiliated with Robinhood, Public, ElevenLabs, or any broker or voice provider.
 
-See [docs/architecture/robinhood-readiness.md](docs/architecture/robinhood-readiness.md) for the Robinhood readiness notes. The current repository has no Robinhood MCP, no live trading path, and no real broker API integration.
+See [docs/architecture/robinhood-readiness.md](docs/architecture/robinhood-readiness.md) and [docs/robinhood-readonly-setup.md](docs/robinhood-readonly-setup.md) for the Robinhood readiness notes. The current repository has no live trading path and no real broker API integration outside the externally managed read-only MCP client boundary.
 
 For public wording and screenshot guidance, see [docs/public-positioning.md](docs/public-positioning.md). For pre-release validation, see [docs/v0.1-release-checklist.md](docs/v0.1-release-checklist.md).
 
@@ -152,6 +158,8 @@ For public wording and screenshot guidance, see [docs/public-positioning.md](doc
 - No live trading in this scaffold.
 - No plaintext secret storage.
 - No broker credentials or API keys.
+- No order review, order placement, or cancel order for Robinhood MCP.
+- No real Robinhood account data persisted by default.
 - No raw audio storage by StreetSpeak AI.
 - Explicit opt-in will be required before any future live execution work.
 - Future live execution must require specific confirmation phrases, not generic responses like "yes" or "do it".
