@@ -493,6 +493,22 @@ describe("StreetSpeak CLI", () => {
     expect(result.stdout).not.toContain("order-raw-789");
   });
 
+  it("does not expose top-level live trading commands", async () => {
+    for (const args of [
+      ["trade", "buy 5 HOOD"],
+      ["place", "buy 5 HOOD"],
+      ["cancel", "order-1"]
+    ]) {
+      const result = await runStreetSpeakCli(args);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain(`Unknown command: ${args[0]}`);
+      expect(result.stderr).toContain(
+        "No live trading, order review, order placement, or cancel-order command exists in this CLI."
+      );
+    }
+  });
+
   it("does not expose Robinhood order review, placement, or cancel commands", async () => {
     for (const args of [
       ["robinhood", "review", "buy 5 HOOD"],
