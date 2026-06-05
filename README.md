@@ -86,7 +86,7 @@ The fixture explorer displays static account summary, buying power, portfolio, p
 
 The MCP panel is read-only and unavailable by default. If a developer provides an externally managed MCP client at runtime, it can request only `get_accounts`, `get_portfolio`, `get_equity_positions`, `get_equity_quotes`, `get_equity_orders`, `get_equity_tradability`, and `search`. StreetSpeak AI stores no MCP URL, token, broker credential, raw account identifier, raw portfolio value, raw holding, raw order ID, or raw MCP output in the repo or browser local storage by default.
 
-See [docs/v0.1-public-demo-guide.md](docs/v0.1-public-demo-guide.md), [docs/demo-script.md](docs/demo-script.md), and [docs/v0.1-demo-checklist.md](docs/v0.1-demo-checklist.md) for reviewer walkthroughs.
+See [docs/design-direction.md](docs/design-direction.md), [docs/v0.1-public-demo-guide.md](docs/v0.1-public-demo-guide.md), [docs/demo-script.md](docs/demo-script.md), and [docs/v0.1-demo-checklist.md](docs/v0.1-demo-checklist.md) for the visual system and reviewer walkthroughs.
 
 ## Browser Voice Input
 
@@ -228,4 +228,4 @@ Useful project structure:
 - `packages/audit` - audit event types, redaction helpers, audit exports, and mock receipt exports.
 - `packages/brokers` - mock broker adapter plus disabled fixture-only Robinhood read-only contracts.
 - `packages/voice` - voice transcript and provider interfaces.
-- `docs` - architecture, legal, security, and collaboration notes.
+- `docs` - architecture, legal, security, collaboration notes, demo guides, and design direction.
