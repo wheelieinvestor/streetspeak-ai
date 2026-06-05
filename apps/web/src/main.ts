@@ -627,11 +627,7 @@ function createMarkup(options: MarkupOptions): string {
         ).join("")}
       </section>
 
-      ${renderSettings(settings, storageAvailable)}
-
-      ${renderV01MockDemoStatus()}
-
-      <section id="mock-desk" class="section-group" aria-label="Mock Trading Desk">
+      <section id="mock-desk" class="section-group primary-workflow" aria-label="Mock Trading Desk">
         <div class="section-header">
           <div>
             <p class="eyebrow">Mock Trading Desk</p>
@@ -646,7 +642,7 @@ function createMarkup(options: MarkupOptions): string {
         <section class="desk-grid">
           <section class="panel panel-span answer-panel" aria-label="mock response">
             <div class="panel-heading">
-              <h2>Answer Output</h2>
+              <h2><span class="step-kicker">01</span> Answer Output</h2>
               ${state ? `<span class="status-pill">${escapeHtml(state.status)}</span>` : ""}
             </div>
             <p class="answer">${escapeHtml(state?.answer ?? state?.message ?? "Accept the local safety onboarding, then run a mock command.")}</p>
@@ -663,7 +659,7 @@ function createMarkup(options: MarkupOptions): string {
 
           <section class="panel" aria-label="parsed command">
             <div class="panel-heading">
-              <h2>Parsed Intent</h2>
+              <h2><span class="step-kicker">02</span> Parsed Intent</h2>
               <span class="muted">${escapeHtml(state?.route.intent ?? "none")}</span>
             </div>
             ${renderParsedCommand(state)}
@@ -671,7 +667,7 @@ function createMarkup(options: MarkupOptions): string {
 
           <section class="panel ticket-panel" aria-label="order ticket">
             <div class="panel-heading">
-              <h2>Order Ticket</h2>
+              <h2><span class="step-kicker">03</span> Mock Order Ticket</h2>
               <span class="muted">mock equity</span>
             </div>
             ${renderTicket(state)}
@@ -679,7 +675,7 @@ function createMarkup(options: MarkupOptions): string {
 
           <section class="panel safety-panel" aria-label="safety review">
             <div class="panel-heading">
-              <h2>Safety Review</h2>
+              <h2><span class="step-kicker">04</span> Safety Review</h2>
               <span class="muted">required</span>
             </div>
             ${renderSafety(state)}
@@ -687,7 +683,7 @@ function createMarkup(options: MarkupOptions): string {
 
           <section class="panel panel-span confirmation-panel" aria-label="confirmation">
             <div class="panel-heading">
-              <h2>Confirmation Challenge</h2>
+              <h2><span class="step-kicker">05</span> Exact Confirmation</h2>
               <span class="muted">exact phrase and code required</span>
             </div>
             ${renderConfirmation(state, confirmationDisabled, busy)}
@@ -695,7 +691,7 @@ function createMarkup(options: MarkupOptions): string {
 
           <section class="panel broker-panel" aria-label="mock broker response">
             <div class="panel-heading">
-              <h2>Mock Broker Response</h2>
+              <h2><span class="step-kicker">06</span> Mock Submission</h2>
               <span class="muted">no live order</span>
             </div>
             ${renderBrokerResponse(state)}
@@ -703,7 +699,7 @@ function createMarkup(options: MarkupOptions): string {
 
           <section id="local-exports" class="panel panel-span receipt-panel" aria-label="local exports and receipts">
             <div class="panel-heading">
-              <h2>Receipts And Local Exports</h2>
+              <h2>Local Receipt And Exports</h2>
               <span class="badge badge-danger">Mock Only / No Live Trading</span>
             </div>
             ${renderExportPanel(state, persistedAuditTimeline, exportStatusMessage, receiptMarkdownPreview, storageAvailable)}
@@ -718,6 +714,11 @@ function createMarkup(options: MarkupOptions): string {
           </section>
         </section>
       </section>
+
+      <div class="supporting-panels" aria-label="demo settings and safety summary">
+        ${renderSettings(settings, storageAvailable)}
+        ${renderV01MockDemoStatus()}
+      </div>
 
       <section id="robinhood-boundary" class="section-group robinhood-section" aria-label="Robinhood boundaries">
         <div class="section-header">
@@ -1589,10 +1590,14 @@ function renderExportPanel(
 
   return `
     <p class="empty">Exports are created locally from redacted browser data. They are not uploaded, shared, or turned into public URLs.</p>
+    <div class="receipt-callout">
+      <strong>No live broker order was placed.</strong>
+      <span>Local receipt evidence is generated in this browser only after exact mock confirmation.</span>
+    </div>
     <dl class="detail-list export-status">
       <div><dt>Storage</dt><dd>${storageAvailable ? "local browser only" : "unavailable"}</dd></div>
       <div><dt>Audit events</dt><dd>${auditTimeline.length}</dd></div>
-      <div><dt>Receipt statement</dt><dd>No live broker order was placed.</dd></div>
+      <div><dt>Receipt state</dt><dd>${state?.status === "mock_submitted" ? "ready" : "pending mock submission"}</dd></div>
     </dl>
     <div class="settings-actions export-actions">
       <button id="copy-receipt-markdown" type="button" class="primary-button" ${receiptDisabled}>Copy receipt Markdown</button>
