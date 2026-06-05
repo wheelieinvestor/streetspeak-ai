@@ -69,6 +69,22 @@ const DEFAULT_ROBINHOOD_MCP_QUERY: RobinhoodMcpReadOnlyPanelQuery = {
   searchQuery: "hood"
 };
 
+const WORKFLOW_STEPS = [
+  "User command",
+  "Parsed intent",
+  "Ticket",
+  "Safety review",
+  "Exact confirmation",
+  "Mock receipt"
+] as const;
+
+const HERO_GUARDRAILS = [
+  ["Mode", "Mock only"],
+  ["Live trading", "Unavailable"],
+  ["Confirmation", "Exact phrase/code"],
+  ["Data", "Local and redacted"]
+] as const;
+
 const session = createMockSession();
 const app = document.querySelector<HTMLElement>("#app");
 
@@ -498,136 +514,219 @@ function createMarkup(options: MarkupOptions): string {
     !state?.challenge ||
     state.status === "mock_submitted";
   const robinhoodFixtureExplorer = createRobinhoodFixtureExplorerModel();
+  const commandPlaceholder =
+    voiceState.status === "listening"
+      ? "StreetSpeak AI is listening…"
+      : "Type a mock command, e.g. buy 5 HOOD";
 
   return `
     <main class="desk-shell">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">StreetSpeak AI</p>
-          <h1>Voice-native mock trading desk</h1>
-          <p class="subtitle">A local public demo for self-directed workflows: mock tickets, exact-code confirmation, local receipts, and no live trading.</p>
-        </div>
-        <div class="mode-stack" aria-label="mode status">
-          <span class="badge">Mock Only</span>
-          <span class="badge badge-danger">No Live Trading</span>
+      <header class="app-hero">
+        <nav class="top-nav" aria-label="StreetSpeak AI sections">
+          <a class="brand-mark" href="#command-center" aria-label="StreetSpeak AI command center">
+            <span class="brand-glyph" aria-hidden="true">SS</span>
+            <span>StreetSpeak AI</span>
+          </a>
+          <div class="nav-links">
+            <a href="#command-center">Command</a>
+            <a href="#mock-desk">Desk</a>
+            <a href="#robinhood-boundary">Robinhood</a>
+            <a href="#local-exports">Exports</a>
+          </div>
+          <div class="mode-stack" aria-label="mode status">
+            <span class="badge badge-positive">Mock Only</span>
+            <span class="badge badge-danger">No Live Trading</span>
+          </div>
+        </nav>
+
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">Local v0.1 product demo</p>
+            <h1>StreetSpeak AI</h1>
+            <p class="hero-tagline">Voice-native trading desk for AI agents</p>
+            <p class="subtitle">A screenshot-ready local mock workflow for self-directed users: static portfolio data, mock tickets, exact-code confirmation, local receipts, and no investment advice.</p>
+            <div class="hero-actions">
+              <a class="primary-button" href="#command-center">Open command center</a>
+              <a class="secondary-button" href="#robinhood-boundary">View read-only boundary</a>
+            </div>
+          </div>
+
+          <aside class="hero-status-card" aria-label="demo guardrails">
+            <div class="panel-heading">
+              <h2>Demo Guardrails</h2>
+              <span class="status-pill">v0.1 local</span>
+            </div>
+            <dl class="hero-metrics">
+              ${HERO_GUARDRAILS.map(
+                ([label, value]) =>
+                  `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`
+              ).join("")}
+            </dl>
+          </aside>
         </div>
       </header>
 
-      <section class="warning-band">
-        <strong>No live broker execution.</strong>
-        This local demo uses static mock quotes, a fake portfolio, exact confirmation challenges, and a redacted audit timeline stored only in this browser. It is not investment advice.
+      <section class="status-strip" aria-label="public demo guardrails">
+        <div>
+          <strong>No live broker execution</strong>
+          <span>Static mock quotes, fake portfolio fixtures, exact confirmation challenges, and redacted browser-local audit events.</span>
+        </div>
+        <div>
+          <strong>Not investment advice</strong>
+          <span>StreetSpeak AI is a self-directed trading utility demo, not a recommendation engine.</span>
+        </div>
       </section>
 
       ${renderSettings(settings, storageAvailable)}
 
       ${renderV01MockDemoStatus()}
 
-      <section class="command-band" aria-label="mock command input">
+      <section id="command-center" class="command-band" aria-label="mock command input">
         <div class="command-layout">
-          <form id="command-form" class="command-form">
-            <label for="command-input">Command input</label>
-            <div class="command-row">
-              <input
-                id="command-input"
-                name="command"
-                type="text"
-                autocomplete="off"
-                placeholder="buy 5 HOOD"
-                ${busy || !onboardingAccepted ? "disabled" : ""}
-              />
-              <button type="submit" ${busy || !onboardingAccepted ? "disabled" : ""}>Run</button>
+          <div class="command-card">
+            <div class="command-card-heading">
+              <div>
+                <p class="section-label">Command Center</p>
+                <h2>Mock trading desk command</h2>
+              </div>
+              <span class="status-pill">${busy ? "processing" : onboardingAccepted ? "ready" : "onboarding required"}</span>
             </div>
-          </form>
+            <form id="command-form" class="command-form">
+              <label for="command-input">Typed fallback</label>
+              <div class="command-row">
+                <input
+                  id="command-input"
+                  name="command"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="${commandPlaceholder}"
+                  ${busy || !onboardingAccepted ? "disabled" : ""}
+                />
+                <button type="submit" ${busy || !onboardingAccepted ? "disabled" : ""}>Run mock</button>
+              </div>
+            </form>
+            <div class="examples-block">
+              <p class="section-label">Example commands</p>
+              <div class="examples" aria-label="example commands">
+                ${EXAMPLE_COMMANDS.map((command) =>
+                  renderExampleButton(command, busy || !onboardingAccepted)
+                ).join("")}
+              </div>
+            </div>
+          </div>
           ${renderVoiceInput(voiceState, settings, busy, onboardingAccepted)}
         </div>
-        <div>
-          <p class="section-label">Try this command</p>
-          <div class="examples" aria-label="example commands">
-            ${EXAMPLE_COMMANDS.map((command) =>
-              renderExampleButton(command, busy || !onboardingAccepted)
-            ).join("")}
+      </section>
+
+      <section class="workflow-rail" aria-label="mock trading workflow">
+        ${WORKFLOW_STEPS.map(
+          (step, index) =>
+            `<div class="workflow-step"><span>${index + 1}</span>${escapeHtml(step)}</div>`
+        ).join("")}
+      </section>
+
+      <section id="mock-desk" class="section-group" aria-label="Mock Trading Desk">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Mock Trading Desk</p>
+            <h2>Command-to-receipt workflow</h2>
+          </div>
+          <div class="mode-stack">
+            <span class="badge badge-positive">Mock Only</span>
+            <span class="badge badge-danger">No Live Trading</span>
           </div>
         </div>
+
+        <section class="desk-grid">
+          <section class="panel panel-span answer-panel" aria-label="mock response">
+            <div class="panel-heading">
+              <h2>Answer Output</h2>
+              ${state ? `<span class="status-pill">${escapeHtml(state.status)}</span>` : ""}
+            </div>
+            <p class="answer">${escapeHtml(state?.answer ?? state?.message ?? "Accept the local safety onboarding, then run a mock command.")}</p>
+            ${renderQuote(state)}
+          </section>
+
+          <section class="panel portfolio-panel" aria-label="mock portfolio">
+            <div class="panel-heading">
+              <h2>Mock Portfolio</h2>
+              <span class="muted">static fixture</span>
+            </div>
+            ${renderPortfolio(state)}
+          </section>
+
+          <section class="panel" aria-label="parsed command">
+            <div class="panel-heading">
+              <h2>Parsed Intent</h2>
+              <span class="muted">${escapeHtml(state?.route.intent ?? "none")}</span>
+            </div>
+            ${renderParsedCommand(state)}
+          </section>
+
+          <section class="panel ticket-panel" aria-label="order ticket">
+            <div class="panel-heading">
+              <h2>Order Ticket</h2>
+              <span class="muted">mock equity</span>
+            </div>
+            ${renderTicket(state)}
+          </section>
+
+          <section class="panel safety-panel" aria-label="safety review">
+            <div class="panel-heading">
+              <h2>Safety Review</h2>
+              <span class="muted">required</span>
+            </div>
+            ${renderSafety(state)}
+          </section>
+
+          <section class="panel panel-span confirmation-panel" aria-label="confirmation">
+            <div class="panel-heading">
+              <h2>Confirmation Challenge</h2>
+              <span class="muted">exact phrase and code required</span>
+            </div>
+            ${renderConfirmation(state, confirmationDisabled, busy)}
+          </section>
+
+          <section class="panel broker-panel" aria-label="mock broker response">
+            <div class="panel-heading">
+              <h2>Mock Broker Response</h2>
+              <span class="muted">no live order</span>
+            </div>
+            ${renderBrokerResponse(state)}
+          </section>
+
+          <section id="local-exports" class="panel panel-span receipt-panel" aria-label="local exports and receipts">
+            <div class="panel-heading">
+              <h2>Receipts And Local Exports</h2>
+              <span class="badge badge-danger">Mock Only / No Live Trading</span>
+            </div>
+            ${renderExportPanel(state, persistedAuditTimeline, exportStatusMessage, receiptMarkdownPreview, storageAvailable)}
+          </section>
+
+          <section class="panel audit-panel" aria-label="audit timeline">
+            <div class="panel-heading">
+              <h2>Audit Timeline</h2>
+              <span class="muted">local browser storage</span>
+            </div>
+            ${settings.showAuditTimeline ? renderAuditTimeline(persistedAuditTimeline) : `<p class="empty">Audit timeline is hidden by local settings.</p>`}
+          </section>
+        </section>
       </section>
 
-      <section class="desk-grid">
-        <section class="panel panel-span" aria-label="mock response">
-          <div class="panel-heading">
-            <h2>Answer Output</h2>
-            ${state ? `<span class="status-pill">${escapeHtml(state.status)}</span>` : ""}
+      <section id="robinhood-boundary" class="section-group robinhood-section" aria-label="Robinhood boundaries">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Robinhood Boundary</p>
+            <h2>Fixture explorer and MCP read-only panel</h2>
           </div>
-          <p class="answer">${escapeHtml(state?.answer ?? state?.message ?? "Accept the local safety onboarding, then run a mock command.")}</p>
-          ${renderQuote(state)}
-        </section>
-
-        <section class="panel" aria-label="mock portfolio">
-          <div class="panel-heading">
-            <h2>Mock Portfolio</h2>
-            <span class="muted">static fixture</span>
+          <div class="mode-stack">
+            <span class="badge">Read-Only</span>
+            <span class="badge badge-danger">No Order Actions</span>
           </div>
-          ${renderPortfolio(state)}
-        </section>
-
-        <section class="panel" aria-label="parsed command">
-          <div class="panel-heading">
-            <h2>Parsed Intent</h2>
-            <span class="muted">${escapeHtml(state?.route.intent ?? "none")}</span>
-          </div>
-          ${renderParsedCommand(state)}
-        </section>
-
-        <section class="panel" aria-label="order ticket">
-          <div class="panel-heading">
-            <h2>Order Ticket</h2>
-            <span class="muted">mock equity</span>
-          </div>
-          ${renderTicket(state)}
-        </section>
-
-        <section class="panel" aria-label="safety review">
-          <div class="panel-heading">
-            <h2>Safety Review</h2>
-            <span class="muted">required</span>
-          </div>
-          ${renderSafety(state)}
-        </section>
-
-        <section class="panel panel-span" aria-label="confirmation">
-          <div class="panel-heading">
-            <h2>Confirmation Challenge</h2>
-            <span class="muted">exact phrase and code required</span>
-          </div>
-          ${renderConfirmation(state, confirmationDisabled, busy)}
-        </section>
-
-        <section class="panel" aria-label="mock broker response">
-          <div class="panel-heading">
-            <h2>Mock Broker Response</h2>
-            <span class="muted">no live order</span>
-          </div>
-          ${renderBrokerResponse(state)}
-        </section>
-
-        <section class="panel panel-span" aria-label="local exports and receipts">
-          <div class="panel-heading">
-            <h2>Receipts And Local Exports</h2>
-            <span class="badge badge-danger">Mock Only / No Live Trading</span>
-          </div>
-          ${renderExportPanel(state, persistedAuditTimeline, exportStatusMessage, receiptMarkdownPreview, storageAvailable)}
-        </section>
-
-        <section class="panel" aria-label="audit timeline">
-          <div class="panel-heading">
-            <h2>Audit Timeline</h2>
-            <span class="muted">local browser storage</span>
-          </div>
-          ${settings.showAuditTimeline ? renderAuditTimeline(persistedAuditTimeline) : `<p class="empty">Audit timeline is hidden by local settings.</p>`}
-        </section>
+        </div>
+        ${renderRobinhoodFixtureExplorer(robinhoodFixtureExplorer)}
+        ${renderRobinhoodMcpReadOnlyPanel(robinhoodMcpPanel, robinhoodMcpBusy)}
       </section>
-
-      ${renderRobinhoodMcpReadOnlyPanel(robinhoodMcpPanel, robinhoodMcpBusy)}
-
-      ${renderRobinhoodFixtureExplorer(robinhoodFixtureExplorer)}
     </main>
     ${
       onboardingAccepted
@@ -719,23 +818,28 @@ function renderVoiceInput(
     voiceState.status !== "listening" &&
     !busy;
   const canStop = voiceState.status === "listening";
+  const isListening = voiceState.status === "listening";
+  const voiceMessage = isListening
+    ? "StreetSpeak AI is listening…"
+    : voiceState.message;
 
   return `
-    <div class="voice-panel" aria-label="browser voice input">
+    <div class="voice-panel ${isListening ? "is-listening" : ""}" aria-label="browser voice input">
+      <span class="voice-orb" aria-hidden="true"></span>
       <div class="voice-heading">
-        <span class="section-label">Browser voice</span>
+        <span class="section-label">Browser-native voice</span>
         <span class="status-pill">${escapeHtml(voiceState.status)}</span>
       </div>
       <div class="voice-actions">
-        <button id="browser-voice-button" type="button" ${canStart ? "" : "disabled"}>Start voice</button>
+        <button id="browser-voice-button" type="button" ${canStart ? "" : "disabled"}>Listen</button>
         <button id="stop-browser-voice-button" type="button" class="secondary-button" ${canStop ? "" : "disabled"}>Stop</button>
       </div>
-      <p class="voice-note">${escapeHtml(voiceState.message)}</p>
+      <p class="voice-note">${escapeHtml(voiceMessage)}</p>
       <p class="voice-note">Browser-native speech behavior depends on the browser and device. StreetSpeak AI does not store raw audio or send raw audio to a StreetSpeak server.</p>
       ${
         voiceState.lastTranscript
-          ? `<p class="transcript">Transcript: ${escapeHtml(voiceState.lastTranscript)}</p>`
-          : ""
+          ? `<div class="transcript"><span>Transcript preview</span><strong>${escapeHtml(voiceState.lastTranscript)}</strong></div>`
+          : `<p class="transcript transcript-empty">Transcript preview appears here after browser speech returns text.</p>`
       }
     </div>
   `;
@@ -773,9 +877,10 @@ function renderRobinhoodMcpReadOnlyPanel(
           <p class="status-copy">This panel is read-only, separate from the mock trading desk and fixture explorer, and stores no Robinhood credentials or real read-only data in localStorage by default.</p>
         </div>
         <div class="mode-stack" aria-label="Robinhood MCP read-only status">
+          <span class="badge">Read-Only</span>
           <span class="badge">${escapeHtml(model.readOnlyBadge)}</span>
-          <span class="badge badge-danger">No live trading</span>
-          <span class="badge badge-danger">No order actions</span>
+          <span class="badge badge-danger">No Live Trading</span>
+          <span class="badge badge-danger">No Order Actions</span>
         </div>
       </div>
 
@@ -807,13 +912,19 @@ function renderRobinhoodMcpReadOnlyPanel(
           <span>account / portfolio / positions / quote / order history / tradability / search</span>
         </div>
         <form id="robinhood-mcp-readonly-form" class="command-form">
-          <div class="command-row">
-            <label for="robinhood-mcp-quote-symbol">Quote symbol</label>
-            <input id="robinhood-mcp-quote-symbol" type="text" value="${escapeHtml(model.query.quoteSymbol)}" autocomplete="off" />
-            <label for="robinhood-mcp-tradability-symbol">Tradability symbol</label>
-            <input id="robinhood-mcp-tradability-symbol" type="text" value="${escapeHtml(model.query.tradabilitySymbol)}" autocomplete="off" />
-            <label for="robinhood-mcp-search-query">Search query</label>
-            <input id="robinhood-mcp-search-query" type="text" value="${escapeHtml(model.query.searchQuery)}" autocomplete="off" />
+          <div class="query-grid">
+            <label class="field-stack" for="robinhood-mcp-quote-symbol">
+              <span>Quote symbol</span>
+              <input id="robinhood-mcp-quote-symbol" type="text" value="${escapeHtml(model.query.quoteSymbol)}" autocomplete="off" />
+            </label>
+            <label class="field-stack" for="robinhood-mcp-tradability-symbol">
+              <span>Tradability symbol</span>
+              <input id="robinhood-mcp-tradability-symbol" type="text" value="${escapeHtml(model.query.tradabilitySymbol)}" autocomplete="off" />
+            </label>
+            <label class="field-stack" for="robinhood-mcp-search-query">
+              <span>Search query</span>
+              <input id="robinhood-mcp-search-query" type="text" value="${escapeHtml(model.query.searchQuery)}" autocomplete="off" />
+            </label>
             <button type="submit" ${busy ? "disabled" : ""}>Refresh Read-Only Data</button>
           </div>
         </form>
@@ -964,8 +1075,10 @@ function renderRobinhoodFixtureExplorer(
           <p class="status-copy">This panel uses static fixture data only. It is not a Robinhood connection, real account data, real broker data, or real market data.</p>
         </div>
         <div class="mode-stack" aria-label="Robinhood fixture status">
-          <span class="badge">Fixture-only</span>
-          <span class="badge badge-danger">No live connection</span>
+          <span class="badge">Fixture Only</span>
+          <span class="badge">Read-Only</span>
+          <span class="badge badge-danger">No Live Connection</span>
+          <span class="badge badge-danger">No Order Actions</span>
         </div>
       </div>
 
