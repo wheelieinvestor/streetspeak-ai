@@ -2,10 +2,13 @@
 
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import {
+  createMockSession,
   createMockTradingDeskTurn,
   parseMockTradingCommand,
+  submitMockTradingDeskConfirmation,
   type MockTradingDeskState
 } from "@streetspeak-ai/core";
 import {
@@ -27,7 +30,12 @@ export interface StreetSpeakCliRuntime {
   readonly robinhoodMcpClient?: RobinhoodMcpReadOnlyClient;
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly importModule?: (modulePath: string) => Promise<unknown>;
+  readonly interactiveInput?: InteractiveInput;
+  readonly writeOutput?: (text: string) => void | Promise<void>;
+  readonly color?: boolean;
 }
+
+export type InteractiveInput = AsyncIterable<string> | Iterable<string>;
 
 export type TextToSpeechProviderKind = "macos_say" | "stdout_fallback";
 
@@ -58,6 +66,34 @@ export interface RobinhoodHandoffResult {
   readonly message: string;
 }
 
+interface InteractiveSessionState {
+  readonly session: ReturnType<typeof createMockSession>;
+  readonly startedAt: Date;
+  readonly lines: string[];
+  readonly useColor: boolean;
+  readonly input: InteractiveInput;
+  readonly writeOutput?: (text: string) => void | Promise<void>;
+  latestTranscript?: string;
+  latestState?: MockTradingDeskState;
+  latestTicketState?: MockTradingDeskState;
+  latestReceipt?: SessionReceipt;
+  speakEnabled: boolean;
+  suppressSpeakForCurrentResponse?: boolean;
+  turnCount: number;
+}
+
+interface SessionReceipt {
+  readonly generatedAt: string;
+  readonly commandTranscript: string;
+  readonly ticketSummary: string;
+  readonly mockOrderId: string;
+  readonly brokerStatus: string;
+  readonly statement: "No live broker order was placed.";
+  readonly liveTradingEnabled: false;
+  readonly rawAudioStored: false;
+  readonly auditEventCount: number;
+}
+
 const STATUS_LINES = [
   "StreetSpeak AI CLI status",
   "mock trading desk: available",
@@ -76,6 +112,8 @@ const HELP_LINES = [
   "StreetSpeak CLI",
   "",
   "Commands:",
+  "  streetspeak",
+  "  streetspeak session",
   "  streetspeak status",
   '  streetspeak demo "show my portfolio"',
   '  streetspeak demo "what is HOOD trading at"',
@@ -85,6 +123,25 @@ const HELP_LINES = [
   '  streetspeak speak "text"',
   "",
   "No live trading, order review, order placement, or cancel-order command exists in this CLI."
+] as const;
+
+const SESSION_HELP_LINES = [
+  "Session commands:",
+  "  help",
+  "  status",
+  "  show my portfolio",
+  "  what is HOOD trading at",
+  "  buy 5 HOOD",
+  "  buy $500 of HOOD",
+  "  confirm <exact phrase>",
+  "  yes",
+  "  receipt",
+  "  handoff",
+  "  smoke",
+  "  speak on",
+  "  speak off",
+  "  clear",
+  "  exit"
 ] as const;
 
 const SAFE_DEMO_FOOTER = [
@@ -100,12 +157,11 @@ export async function runStreetSpeakCli(
   const parsed = parseCliArgs(argv);
   const [command, ...rest] = parsed.positionals;
 
-  if (
-    !command ||
-    command === "help" ||
-    command === "--help" ||
-    command === "-h"
-  ) {
+  if (!command || command === "session") {
+    return runInteractiveSession(runtime);
+  }
+
+  if (command === "help" || command === "--help" || command === "-h") {
     return ok([...HELP_LINES]);
   }
 
@@ -165,6 +221,640 @@ export async function runStreetSpeakCli(
   }
 
   return error(`Unknown command: ${command}\n\n${HELP_LINES.join("\n")}`);
+}
+
+async function runInteractiveSession(
+  runtime: StreetSpeakCliRuntime
+): Promise<CliRunResult> {
+  const startedAt = runtime.now ?? new Date();
+  const state: InteractiveSessionState = {
+    session: createMockSession({ now: startedAt }),
+    startedAt,
+    lines: [],
+    useColor: runtime.color ?? false,
+    input: runtime.interactiveInput ?? [],
+    writeOutput: runtime.writeOutput,
+    speakEnabled: false,
+    turnCount: 0
+  };
+
+  await emit(state, `${renderStartupScreen(state.useColor)}\n`);
+
+  const iterator = toAsyncIterator(state.input);
+
+  while (true) {
+    await emit(state, style("streetspeak › ", "cyan", state.useColor));
+    const next = await iterator.next();
+
+    if (next.done) {
+      await emit(
+        state,
+        "\nStreetSpeak session closed. No live broker order was placed.\n"
+      );
+      break;
+    }
+
+    const transcript = String(next.value).trim();
+
+    if (!transcript) {
+      await emit(
+        state,
+        "\nEmpty command ignored. Type help for session commands.\n"
+      );
+      continue;
+    }
+
+    const lower = transcript.toLowerCase();
+
+    if (lower === "exit" || lower === "quit") {
+      await emit(
+        state,
+        "\nStreetSpeak session closed. No live broker order was placed.\n"
+      );
+      break;
+    }
+
+    if (lower === "clear") {
+      await emit(state, "\u001Bc");
+      await emit(state, `${renderStartupScreen(state.useColor)}\n`);
+      continue;
+    }
+
+    const response = await runInteractiveCommand(
+      transcript,
+      lower,
+      state,
+      runtime
+    );
+    await emitSessionResponse(state, response, runtime);
+  }
+
+  return {
+    exitCode: 0,
+    stdout: state.lines.join(""),
+    stderr: ""
+  };
+}
+
+async function runInteractiveCommand(
+  transcript: string,
+  lower: string,
+  state: InteractiveSessionState,
+  runtime: StreetSpeakCliRuntime
+): Promise<readonly string[]> {
+  if (lower === "help") {
+    return renderCard("Help", SESSION_HELP_LINES, state.useColor);
+  }
+
+  if (lower === "status") {
+    return renderStatusCard(state.useColor);
+  }
+
+  if (lower === "speak on") {
+    state.speakEnabled = true;
+    state.suppressSpeakForCurrentResponse = true;
+    return renderCard(
+      "Speak Back",
+      ["Speak-back is on for future responses.", "No raw audio is stored."],
+      state.useColor
+    );
+  }
+
+  if (lower === "speak off") {
+    state.speakEnabled = false;
+    state.suppressSpeakForCurrentResponse = true;
+    return renderCard(
+      "Speak Back",
+      ["Speak-back is off.", "No raw audio is stored."],
+      state.useColor
+    );
+  }
+
+  if (lower === "receipt") {
+    return state.latestReceipt
+      ? renderReceiptCard(state.latestReceipt, state.useColor)
+      : renderCard(
+          "Receipt",
+          [
+            "No mock receipt is available yet.",
+            "Complete an exact mock confirmation before requesting a receipt.",
+            "No live broker order was placed."
+          ],
+          state.useColor
+        );
+  }
+
+  if (lower === "handoff") {
+    const transcriptForHandoff =
+      state.latestTicketState?.ticket &&
+      state.latestTicketState.command.transcript
+        ? state.latestTicketState.command.transcript
+        : "";
+    const handoff = buildRobinhoodAgentHandoff(transcriptForHandoff);
+
+    return renderCard(
+      "Robinhood Agent Handoff",
+      handoff.supported
+        ? [
+            handoff.prompt ?? "",
+            handoff.message,
+            "StreetSpeak did not send anything to Robinhood.",
+            "StreetSpeak did not review the order.",
+            "StreetSpeak did not place an order.",
+            "This is not investment advice."
+          ]
+        : [
+            handoff.message,
+            "No live broker order was placed.",
+            [
+              "No Robinhood order review, order placement, cancel order,",
+              "or live execution command exists in StreetSpeak CLI."
+            ].join(" ")
+          ],
+      state.useColor
+    );
+  }
+
+  if (lower === "smoke") {
+    const result = await runRobinhoodCommand(["smoke"], runtime);
+    const lines = result.stdout.trimEnd().split("\n");
+
+    return renderCard("Robinhood Smoke Status", lines, state.useColor);
+  }
+
+  if (lower === "yes") {
+    return submitInteractiveConfirmation("yes", state, runtime);
+  }
+
+  if (lower.startsWith("confirm ")) {
+    const confirmationText = transcript.slice("confirm ".length).trim();
+
+    return submitInteractiveConfirmation(confirmationText, state, runtime);
+  }
+
+  state.latestTranscript = transcript;
+  state.turnCount += 1;
+
+  const deskState = await createMockTradingDeskTurn(transcript, {
+    session: state.session,
+    commandId: `cli-session-command-${state.turnCount}`,
+    ticketId: `cli-session-ticket-${state.turnCount}`,
+    challengeId: `cli-session-challenge-${state.turnCount}`,
+    source: "keyboard",
+    ...(runtime.now === undefined ? {} : { now: runtime.now }),
+    ...(runtime.challengeCode === undefined
+      ? {}
+      : { challengeCode: runtime.challengeCode })
+  });
+
+  state.latestState = deskState;
+  if (deskState.ticket) {
+    state.latestTicketState = deskState;
+  }
+
+  return renderInteractiveDeskState(deskState, state.useColor);
+}
+
+async function submitInteractiveConfirmation(
+  confirmationText: string,
+  state: InteractiveSessionState,
+  runtime: StreetSpeakCliRuntime
+): Promise<readonly string[]> {
+  if (!state.latestState?.ticket || !state.latestState.challenge) {
+    return renderCard(
+      "Confirmation Rejected",
+      [
+        "No exact mock confirmation challenge is pending.",
+        "Run buy 5 HOOD to create a mock ticket first.",
+        "No live broker order was placed."
+      ],
+      state.useColor
+    );
+  }
+
+  const confirmedState = await submitMockTradingDeskConfirmation(
+    state.latestState,
+    confirmationText,
+    {
+      ...(runtime.now === undefined ? {} : { now: runtime.now })
+    }
+  );
+  state.latestState = confirmedState;
+  if (confirmedState.ticket) {
+    state.latestTicketState = confirmedState;
+  }
+
+  if (confirmedState.status !== "mock_submitted") {
+    return renderConfirmationRejectedCard(confirmedState, state.useColor);
+  }
+
+  state.latestReceipt = createSessionReceipt(confirmedState, runtime.now);
+
+  return [
+    ...renderMockSubmissionCard(confirmedState, state.useColor),
+    "",
+    ...renderReceiptCard(state.latestReceipt, state.useColor)
+  ];
+}
+
+function renderStartupScreen(useColor: boolean): string {
+  const title = style("StreetSpeak AI", "boldCyan", useColor);
+  const accent = style(
+    "========================================",
+    "blue",
+    useColor
+  );
+  const status = [
+    `${style("[MOCK]", "cyan", useColor)} Mock trading desk: available`,
+    `${style(
+      "[READ-ONLY]",
+      "cyan",
+      useColor
+    )} Robinhood read-only: unavailable/unconfigured by default`,
+    `${style("[LOCKED]", "cyan", useColor)} Live trading: unavailable`
+  ];
+  const safety = [
+    "No live trading",
+    "No order review",
+    "No order placement",
+    "Manual Robinhood Agent handoff only"
+  ].join(" | ");
+
+  return [
+    "",
+    accent,
+    title,
+    "Voice-native trading desk for AI agents",
+    accent,
+    ...status,
+    `Safety: ${safety}`,
+    "Type help for commands. Type exit to close.",
+    ""
+  ].join("\n");
+}
+
+function renderStatusCard(useColor: boolean): readonly string[] {
+  return renderCard(
+    "Status",
+    [
+      "Mock trading desk: available",
+      "Robinhood fixture explorer: available in the web app",
+      "Robinhood read-only: unavailable/unconfigured by default",
+      "Live trading: unavailable",
+      "Order review: unavailable",
+      "Order placement: unavailable",
+      "Cancel order: unavailable",
+      "Credentials stored by StreetSpeak: false",
+      "Raw MCP output printed: false",
+      "Investment advice/trade recommendations: unavailable"
+    ],
+    useColor
+  );
+}
+
+function renderInteractiveDeskState(
+  state: MockTradingDeskState,
+  useColor: boolean
+): readonly string[] {
+  if (state.status === "answered") {
+    if (state.parse.kind === "portfolio_question") {
+      return renderCard(
+        "Portfolio Summary",
+        [
+          state.answer ?? state.message,
+          "Source: mock/static data only.",
+          "Mock only. No live broker order was placed.",
+          "This is not investment advice."
+        ],
+        useColor
+      );
+    }
+
+    return renderCard(
+      "Quote Result",
+      [
+        state.answer ?? state.message,
+        "Source: mock/static data only.",
+        "MOCK STATIC QUOTE - not real market data.",
+        "No live broker order was placed.",
+        "This is not investment advice."
+      ],
+      useColor
+    );
+  }
+
+  if (state.status === "unsupported" || state.status === "invalid") {
+    return renderCard(
+      state.status === "invalid"
+        ? "Clarification Needed"
+        : "Unsupported Command",
+      [
+        state.message,
+        "No final ticket created.",
+        "No live broker order was placed.",
+        "Type help for supported session commands."
+      ],
+      useColor
+    );
+  }
+
+  if (state.ticket && state.safetyReview && state.challenge) {
+    return [
+      ...renderMockTicketCard(state, useColor),
+      "",
+      ...renderSafetyReviewCard(state, useColor),
+      "",
+      ...renderExactConfirmationCard(state, useColor)
+    ];
+  }
+
+  return renderCard(
+    "StreetSpeak Response",
+    [state.message, "No live broker order was placed."],
+    useColor
+  );
+}
+
+function renderMockTicketCard(
+  state: MockTradingDeskState,
+  useColor: boolean
+): readonly string[] {
+  const ticket = state.ticket;
+
+  if (!ticket) {
+    return renderCard(
+      "Mock Ticket",
+      ["No mock ticket is available.", "No live broker order was placed."],
+      useColor
+    );
+  }
+
+  const lines = [
+    `Symbol: ${ticket.symbol}`,
+    `Side: ${ticket.side.toUpperCase()}`,
+    `Quantity: ${ticket.quantity}`,
+    `Order type: ${ticket.type.toUpperCase()}`,
+    ...(ticket.limitPrice === undefined
+      ? []
+      : [`Limit price: ${formatMoney(ticket.limitPrice)}`]),
+    `Time in force: ${ticket.timeInForce.toUpperCase()}`,
+    `Mode: ${ticket.mode}`,
+    `Ticket id: ${ticket.id}`,
+    "Mock only.",
+    "No live broker order was placed."
+  ];
+
+  return renderCard("Mock Ticket", lines, useColor);
+}
+
+function renderSafetyReviewCard(
+  state: MockTradingDeskState,
+  useColor: boolean
+): readonly string[] {
+  const safetyReview = state.safetyReview;
+
+  if (!safetyReview) {
+    return renderCard(
+      "Safety Review",
+      ["No safety review is available.", "No live broker order was placed."],
+      useColor
+    );
+  }
+
+  return renderCard(
+    "Safety Review",
+    [
+      `Live trading enabled: ${safetyReview.liveTradingEnabled}`,
+      `Requires exact mock confirmation: ${safetyReview.requiresExplicitConfirmation}`,
+      ...safetyReview.warnings.map((warning) => `Warning: ${warning}`),
+      ...safetyReview.blocks.map((block) => `Block: ${block}`),
+      "StreetSpeak does not review, place, or cancel Robinhood orders."
+    ],
+    useColor
+  );
+}
+
+function renderExactConfirmationCard(
+  state: MockTradingDeskState,
+  useColor: boolean
+): readonly string[] {
+  const challenge = state.challenge;
+
+  if (!challenge) {
+    return renderCard(
+      "Exact Confirmation Required",
+      ["No exact confirmation challenge is available."],
+      useColor
+    );
+  }
+
+  return renderCard(
+    "Exact Confirmation Required",
+    [
+      "Type confirm <exact phrase> using the phrase below.",
+      challenge.requiredPhrase,
+      "Generic confirmations like yes, do it, or confirmed are rejected.",
+      "Mock submission only. No live broker order will be placed."
+    ],
+    useColor
+  );
+}
+
+function renderConfirmationRejectedCard(
+  state: MockTradingDeskState,
+  useColor: boolean
+): readonly string[] {
+  const reason = state.confirmation?.accepted
+    ? "unknown"
+    : state.confirmation?.reason ?? "unknown";
+
+  return renderCard(
+    "Confirmation Rejected",
+    [
+      state.message,
+      `Reason: ${reason}`,
+      "Use confirm <exact phrase> with the pending challenge phrase/code.",
+      "No live broker order was placed."
+    ],
+    useColor
+  );
+}
+
+function renderMockSubmissionCard(
+  state: MockTradingDeskState,
+  useColor: boolean
+): readonly string[] {
+  return renderCard(
+    "Mock Submission Complete",
+    [
+      state.message,
+      `Ticket: ${
+        state.ticket ? summarizeTicket(state.ticket) : "unavailable"
+      }`,
+      `Mock order id: ${state.brokerResponse?.id ?? "unavailable"}`,
+      `Mock broker status: ${state.brokerResponse?.status ?? "unavailable"}`,
+      `Live execution available: ${
+        state.brokerResponse?.liveExecutionAvailable ?? false
+      }`,
+      "No live broker order was placed."
+    ],
+    useColor
+  );
+}
+
+function createSessionReceipt(
+  state: MockTradingDeskState,
+  now: Date | undefined
+): SessionReceipt {
+  return {
+    generatedAt: (now ?? new Date()).toISOString(),
+    commandTranscript: state.command.transcript,
+    ticketSummary: state.ticket ? summarizeTicket(state.ticket) : "unavailable",
+    mockOrderId: state.brokerResponse?.id ?? "unavailable",
+    brokerStatus: state.brokerResponse?.status ?? "unavailable",
+    statement: "No live broker order was placed.",
+    liveTradingEnabled: false,
+    rawAudioStored: false,
+    auditEventCount: state.auditTimeline.length
+  };
+}
+
+function renderReceiptCard(
+  receipt: SessionReceipt,
+  useColor: boolean
+): readonly string[] {
+  return renderCard(
+    "Receipt",
+    [
+      "Mock Only / No Live Trading",
+      `Generated: ${receipt.generatedAt}`,
+      `Command: ${receipt.commandTranscript}`,
+      `Ticket: ${receipt.ticketSummary}`,
+      `Mock order id: ${receipt.mockOrderId}`,
+      `Mock broker status: ${receipt.brokerStatus}`,
+      receipt.statement,
+      `Live trading enabled: ${receipt.liveTradingEnabled}`,
+      `Raw audio stored: ${receipt.rawAudioStored}`,
+      `Redacted audit events: ${receipt.auditEventCount}`
+    ],
+    useColor
+  );
+}
+
+function renderCard(
+  title: string,
+  body: readonly string[],
+  useColor: boolean
+): readonly string[] {
+  const divider = style("----------------------------------------", "blue", useColor);
+
+  return [
+    "",
+    divider,
+    style(title, "boldCyan", useColor),
+    divider,
+    ...body.map((line) => (line ? `  ${line}` : "")),
+    divider
+  ];
+}
+
+async function emitSessionResponse(
+  state: InteractiveSessionState,
+  lines: readonly string[],
+  runtime: StreetSpeakCliRuntime
+): Promise<void> {
+  const response = `${lines.join("\n")}\n`;
+  await emit(state, response);
+
+  if (!state.speakEnabled || state.suppressSpeakForCurrentResponse) {
+    state.suppressSpeakForCurrentResponse = false;
+    return;
+  }
+
+  try {
+    const statusLine = await speakStatusLine(
+      stripAnsi(lines.join("\n")),
+      runtime
+    );
+    await emit(state, `${statusLine}\n`);
+  } catch {
+    await emit(
+      state,
+      "StreetSpeak TTS: speak-back failed safely. No raw audio stored.\n"
+    );
+  }
+}
+
+async function emit(
+  state: InteractiveSessionState,
+  text: string
+): Promise<void> {
+  state.lines.push(text);
+  await state.writeOutput?.(text);
+}
+
+function toAsyncIterator(input: InteractiveInput): AsyncIterator<string> {
+  if (isAsyncIterable(input)) {
+    return input[Symbol.asyncIterator]();
+  }
+
+  const iterator = input[Symbol.iterator]();
+
+  return {
+    async next() {
+      return iterator.next();
+    }
+  };
+}
+
+function isAsyncIterable(
+  value: InteractiveInput
+): value is AsyncIterable<string> {
+  return Symbol.asyncIterator in Object(value);
+}
+
+function summarizeTicket(ticket: MockTradingDeskState["ticket"]): string {
+  if (!ticket) {
+    return "unavailable";
+  }
+
+  const limitClause =
+    ticket.limitPrice === undefined
+      ? ""
+      : ` @ ${formatMoney(ticket.limitPrice)}`;
+
+  return `${ticket.side.toUpperCase()} ${ticket.quantity} ${
+    ticket.symbol
+  } ${ticket.type.toUpperCase()}${limitClause} ${ticket.timeInForce.toUpperCase()} (${
+    ticket.mode
+  })`;
+}
+
+function style(
+  text: string,
+  variant: "blue" | "cyan" | "boldCyan",
+  useColor: boolean
+): string {
+  if (!useColor) {
+    return text;
+  }
+
+  const code =
+    variant === "boldCyan"
+      ? "\u001B[1;96m"
+      : variant === "cyan"
+        ? "\u001B[96m"
+        : "\u001B[94m";
+
+  return `${code}${text}\u001B[0m`;
+}
+
+function stripAnsi(value: string): string {
+  const escape = String.fromCharCode(27);
+
+  return value
+    .replace(new RegExp(`${escape}\\[[0-9;]*m`, "gu"), "")
+    .replace(new RegExp(`${escape}c`, "gu"), "");
 }
 
 export function buildMacOsSayCommand(text: string): {
@@ -552,8 +1242,39 @@ if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
-  const result = await runStreetSpeakCli(process.argv.slice(2));
-  process.stdout.write(result.stdout);
+  const argv = process.argv.slice(2);
+  const parsed = parseCliArgs(argv);
+  const command = parsed.positionals[0];
+  const isInteractiveLaunch = !command || command === "session";
+  const readline = isInteractiveLaunch
+    ? createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        terminal: Boolean(process.stdin.isTTY && process.stdout.isTTY)
+      })
+    : undefined;
+
+  readline?.on("SIGINT", () => {
+    readline.close();
+  });
+
+  const result = await runStreetSpeakCli(
+    argv,
+    readline
+      ? {
+          interactiveInput: readline,
+          writeOutput(text) {
+            process.stdout.write(text);
+          },
+          color: Boolean(process.stdout.isTTY)
+        }
+      : {}
+  );
+
+  if (!readline) {
+    process.stdout.write(result.stdout);
+  }
+
   process.stderr.write(result.stderr);
   process.exitCode = result.exitCode;
 }

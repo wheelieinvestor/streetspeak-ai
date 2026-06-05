@@ -12,6 +12,8 @@ pnpm build
 For quick local development, run the TypeScript source directly through the dev wrapper:
 
 ```sh
+pnpm streetspeak:dev
+pnpm streetspeak:dev session
 pnpm streetspeak:dev status
 pnpm streetspeak:dev demo "buy 5 HOOD"
 pnpm streetspeak:dev robinhood handoff "buy 5 HOOD"
@@ -24,12 +26,56 @@ For built usage, run the production path:
 
 ```sh
 pnpm build
+pnpm streetspeak
+pnpm streetspeak session
 pnpm streetspeak status
 ```
 
 After `pnpm build`, the CLI package also exposes a `streetspeak` bin from `apps/cli`.
 
 StreetSpeak CLI does not place real trades. Robinhood Agent handoff is manual only.
+
+## Interactive Session
+
+Launching the CLI with no command opens the interactive StreetSpeak terminal:
+
+```sh
+pnpm streetspeak:dev
+# or, after pnpm build:
+pnpm streetspeak
+```
+
+The startup screen shows the StreetSpeak AI banner, `Voice-native trading desk for AI agents`, mock desk status, Robinhood read-only unavailable/unconfigured status, live trading unavailable status, and the manual-handoff-only safety boundary.
+
+Useful session commands:
+
+```text
+help
+status
+show my portfolio
+what is HOOD trading at
+buy 5 HOOD
+buy $500 of HOOD
+confirm <exact phrase>
+yes
+receipt
+handoff
+smoke
+speak on
+speak off
+clear
+exit
+```
+
+Session state is in memory only. The CLI remembers the latest transcript, parsed mock intent, mock ticket, safety review, exact confirmation challenge, mock confirmation result, mock broker response, receipt, and local speak-back setting only until the process exits. It does not persist session state, raw audio, broker credentials, real account data, raw MCP output, or live orders.
+
+`buy 5 HOOD` creates a mock ticket and exact confirmation challenge only. `yes` is rejected as a generic confirmation. To complete a mock submission, type:
+
+```text
+confirm CONFIRM MOCK BUY 5 HOOD MARKET CODE <code>
+```
+
+Use the exact phrase/code printed in your terminal. The result is a mock receipt only, and every receipt states `No live broker order was placed.`
 
 ## Status
 
