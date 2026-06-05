@@ -577,9 +577,11 @@ function createMarkup(options: MarkupOptions): string {
         </div>
       </section>
 
-      ${renderSettings(settings, storageAvailable)}
-
-      ${renderV01MockDemoStatus()}
+      <section class="product-status-row" aria-label="product status">
+        <div><span class="status-dot status-dot-active"></span><strong>Mock trading desk</strong><span>active</span></div>
+        <div><span class="status-dot"></span><strong>Robinhood read-only</strong><span>gated / unconfigured</span></div>
+        <div><span class="status-dot status-dot-danger"></span><strong>Live trading</strong><span>unavailable</span></div>
+      </section>
 
       <section id="command-center" class="command-band" aria-label="mock command input">
         <div class="command-layout">
@@ -591,8 +593,8 @@ function createMarkup(options: MarkupOptions): string {
               </div>
               <span class="status-pill">${busy ? "processing" : onboardingAccepted ? "ready" : "onboarding required"}</span>
             </div>
-            <form id="command-form" class="command-form">
-              <label for="command-input">Typed fallback</label>
+            <form id="command-form" class="command-form ${voiceState.status === "listening" ? "is-listening" : ""}">
+              <label for="command-input">AI command bar</label>
               <div class="command-row">
                 <input
                   id="command-input"
@@ -621,9 +623,13 @@ function createMarkup(options: MarkupOptions): string {
       <section class="workflow-rail" aria-label="mock trading workflow">
         ${WORKFLOW_STEPS.map(
           (step, index) =>
-            `<div class="workflow-step"><span>${index + 1}</span>${escapeHtml(step)}</div>`
+            `<div class="workflow-step ${getWorkflowStepClass(state, index)}"><span>${index + 1}</span>${escapeHtml(step)}</div>`
         ).join("")}
       </section>
+
+      ${renderSettings(settings, storageAvailable)}
+
+      ${renderV01MockDemoStatus()}
 
       <section id="mock-desk" class="section-group" aria-label="Mock Trading Desk">
         <div class="section-header">
@@ -734,6 +740,35 @@ function createMarkup(options: MarkupOptions): string {
         : renderOnboardingModal(onboardingChecks, storageAvailable)
     }
   `;
+}
+
+function getWorkflowStepClass(
+  state: MockTradingDeskState | null,
+  index: number
+): string {
+  const completedThrough = !state
+    ? 0
+    : state.status === "mock_submitted"
+      ? 6
+      : state.challenge
+        ? 5
+        : state.ticket
+          ? 4
+          : state.route.intent === "portfolio_question" ||
+              state.route.intent === "market_question"
+            ? 2
+            : 1;
+  const activeIndex = Math.max(0, Math.min(completedThrough, 5));
+
+  if (index < completedThrough) {
+    return "is-complete";
+  }
+
+  if (index === activeIndex) {
+    return "is-active";
+  }
+
+  return "is-pending";
 }
 
 function renderSettings(

@@ -1,6 +1,6 @@
 # StreetSpeak AI Design Direction
 
-StreetSpeak AI v0.1 should feel like a premium, medium-blue fintech and AI command surface while staying explicit about the mock-only trading boundary.
+StreetSpeak AI v0.1 should feel like a premium, dark-blue fintech and AI command surface while staying explicit about the mock-only trading boundary.
 
 ## Identity
 
@@ -10,22 +10,22 @@ StreetSpeak AI v0.1 should feel like a premium, medium-blue fintech and AI comma
 
 ## Palette
 
-- Primary blue: `#2563FF`.
-- Secondary blue: `#3B82F6`.
-- Deep shadow blue: `#082A66`.
-- Light panel surfaces: white and soft blue glass treatments for readability.
+- Primary blue: deep electric/royal blue, anchored by `#174DFF` and richer dark-blue gradients.
+- Secondary blue: `#2F73FF` / soft electric blue glows.
+- Deep shadow blue: `#071B4D` and darker layered navy-blue surfaces.
+- Panel surfaces: dark glass treatments with subtle blue borders, large radii, layered shadows, and soft glows.
 - Support accents: mint/green for safe mock mode, coral/red for hard no-live-trading boundaries, amber for warnings.
 
-Avoid a dark navy-dominant app. The dominant feel should be energetic medium blue with depth, not a black trading terminal.
+Avoid a flat black terminal or plain navy dashboard. The dominant feel should be rich dark blue with depth, motion, and cinematic polish.
 
 ## Component Style
 
-- App shell: medium-blue gradient background, crisp StreetSpeak AI brand lockup, top navigation, and persistent `Mock Only` / `No Live Trading` badges.
-- Panels: layered light glass cards with 8px radius, thin blue borders, and premium lower-right shadows.
-- Command center: one large central command card with typed fallback, browser-native voice status, example chips, transcript preview, and a listening treatment.
-- Workflow: make the sequence clear: user command, parsed intent, ticket, safety review, exact confirmation, mock receipt.
-- Robinhood areas: keep the mock desk, fixture explorer, and MCP read-only panel visually separate. Use explicit badges such as `Fixture Only`, `Read-Only`, `No Live Connection`, and `No Order Actions`.
-- Motion: subtle hover, focus, and listening pulse only. Respect reduced-motion preferences.
+- App shell: rich dark-blue gradient environment, crisp StreetSpeak AI brand lockup, top navigation, and persistent `Mock Only` / `No Live Trading` badges.
+- Panels: layered dark glass cards with large radii, thin blue borders, soft blue glows, and premium lower-right shadows.
+- Command center: the visual centerpiece, with a large glowing AI command bar, browser-native voice status, premium example chips, transcript preview, and a listening pulse/glow treatment.
+- Workflow: make the sequence clear with a numbered rail and active states: user command, parsed intent, ticket, safety review, exact confirmation, mock receipt.
+- Robinhood areas: keep the mock desk, fixture explorer, and MCP read-only panel visually separate as premium capability cards. Use explicit badges such as `Fixture Only`, `Read-Only`, `No Live Connection`, and `No Order Actions`.
+- Motion: subtle background glow drift, section reveal, card hover lift, focus glow, modal fade/scale, status-dot pulse, confirmation attention pulse, and listening pulse. Respect reduced-motion preferences.
 - Accessibility: visible focus states, readable contrast, mobile usability, and no text overlap.
 
 ## Inspiration Sites
