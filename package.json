@@ -13,6 +13,7 @@
     "typecheck": "pnpm -r typecheck",
     "format": "prettier --write .",
     "streetspeak": "pnpm --filter @streetspeak-ai/cli start",
+    "streetspeak:dev": "pnpm --filter @streetspeak-ai/cli dev",
     "smoke:robinhood:readonly": "pnpm build && node scripts/robinhood-readonly-smoke-test.mjs"
   },
   "devDependencies": {
@@ -21,6 +22,7 @@
     "eslint": "^9.28.0",
     "prettier": "^3.5.3",
     "typescript": "^5.8.3",
+    "tsx": "^4.20.6",
     "typescript-eslint": "^8.33.1",
     "vite": "^6.3.5",
     "vitest": "^3.2.1"

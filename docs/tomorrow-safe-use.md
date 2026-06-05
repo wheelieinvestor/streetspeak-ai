@@ -5,6 +5,12 @@ Use this flow when running StreetSpeak locally from a terminal.
 ## 1. Confirm Safety State
 
 ```sh
+pnpm streetspeak:dev status
+```
+
+For built usage, run:
+
+```sh
 pnpm build
 pnpm streetspeak status
 ```
@@ -12,6 +18,16 @@ pnpm streetspeak status
 Confirm the output says live trading, order review, order placement, and cancel order are unavailable. If it does not, stop.
 
 ## 2. Run Mock Commands
+
+Quick local development path:
+
+```sh
+pnpm streetspeak:dev demo "show my portfolio"
+pnpm streetspeak:dev demo "what is HOOD trading at"
+pnpm streetspeak:dev demo "buy 5 HOOD"
+```
+
+Built path after `pnpm build`:
 
 ```sh
 pnpm streetspeak demo "show my portfolio"
@@ -24,12 +40,21 @@ The portfolio and quote outputs are mock/static. The buy command creates a mock 
 Unsupported commands should stay blocked:
 
 ```sh
+pnpm streetspeak:dev demo "buy $500 of HOOD"
+# or, after pnpm build:
 pnpm streetspeak demo "buy $500 of HOOD"
 ```
 
 That command should remain unsupported/needs-clarification and should not create a final ticket.
 
 ## 3. Optional Safe Speech Output
+
+```sh
+pnpm streetspeak:dev demo "show my portfolio" --speak
+pnpm streetspeak:dev speak "StreetSpeak mock mode is active"
+```
+
+Built path after `pnpm build`:
 
 ```sh
 pnpm streetspeak demo "show my portfolio" --speak
@@ -41,6 +66,8 @@ On macOS this uses local `say`. Elsewhere it prints to stdout. Do not add Eleven
 ## 4. Redacted Robinhood Read-Only Smoke
 
 ```sh
+pnpm streetspeak:dev robinhood smoke
+# or, after pnpm build:
 pnpm streetspeak robinhood smoke
 ```
 
@@ -49,6 +76,8 @@ Default expected state is unavailable/unconfigured. If using an externally manag
 ## 5. Manual Robinhood Agent Handoff
 
 ```sh
+pnpm streetspeak:dev robinhood handoff "buy 5 HOOD"
+# or, after pnpm build:
 pnpm streetspeak robinhood handoff "buy 5 HOOD"
 ```
 

@@ -9,17 +9,33 @@ pnpm install
 pnpm build
 ```
 
-Run through the root script:
+For quick local development, run the TypeScript source directly through the dev wrapper:
 
 ```sh
+pnpm streetspeak:dev status
+pnpm streetspeak:dev demo "buy 5 HOOD"
+pnpm streetspeak:dev robinhood handoff "buy 5 HOOD"
+pnpm streetspeak:dev speak "StreetSpeak AI is ready."
+```
+
+The dev wrapper uses the minimal `tsx` dev dependency so Dean can run CLI commands without first generating `dist/` output.
+
+For built usage, run the production path:
+
+```sh
+pnpm build
 pnpm streetspeak status
 ```
 
 After `pnpm build`, the CLI package also exposes a `streetspeak` bin from `apps/cli`.
 
+StreetSpeak CLI does not place real trades. Robinhood Agent handoff is manual only.
+
 ## Status
 
 ```sh
+pnpm streetspeak:dev status
+# or, after pnpm build:
 pnpm streetspeak status
 ```
 
@@ -38,6 +54,15 @@ Expected safety state:
 ## Mock Demo Commands
 
 ```sh
+pnpm streetspeak:dev demo "show my portfolio"
+pnpm streetspeak:dev demo "what is HOOD trading at"
+pnpm streetspeak:dev demo "buy 5 HOOD"
+pnpm streetspeak:dev demo "buy $500 of HOOD"
+```
+
+Built path after `pnpm build`:
+
+```sh
 pnpm streetspeak demo "show my portfolio"
 pnpm streetspeak demo "what is HOOD trading at"
 pnpm streetspeak demo "buy 5 HOOD"
@@ -51,6 +76,13 @@ pnpm streetspeak demo "buy $500 of HOOD"
 ## Text To Speech
 
 ```sh
+pnpm streetspeak:dev speak "mock ticket only"
+pnpm streetspeak:dev demo "show my portfolio" --speak
+```
+
+Built path after `pnpm build`:
+
+```sh
 pnpm streetspeak speak "mock ticket only"
 pnpm streetspeak demo "show my portfolio" --speak
 ```
@@ -60,6 +92,8 @@ On macOS, the CLI uses the local `say` command. On other platforms, it falls bac
 ## Robinhood Read-Only Smoke
 
 ```sh
+pnpm streetspeak:dev robinhood smoke
+# or, after pnpm build:
 pnpm streetspeak robinhood smoke
 ```
 
@@ -68,6 +102,8 @@ The default result is unavailable/unconfigured. If an external MCP client is pro
 ## Robinhood Agent Handoff
 
 ```sh
+pnpm streetspeak:dev robinhood handoff "buy 5 HOOD"
+# or, after pnpm build:
 pnpm streetspeak robinhood handoff "buy 5 HOOD"
 ```
 

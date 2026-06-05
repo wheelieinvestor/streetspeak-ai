@@ -37,6 +37,7 @@ StreetSpeak AI v0.1 is a local mock trading desk demo. It can:
 - Show the `Robinhood Read-Only Fixture Explorer` backed only by static fixtures from `packages/brokers`.
 - Show the `Real Robinhood MCP Read-Only Connection` panel for externally managed MCP clients. The default state is unavailable/unconfigured unless the host page provides a read-only client at runtime.
 - Expose Robinhood read-only adapter contracts for fixture data and externally managed MCP read-only data. Neither path includes order review, order placement, cancel order, or live execution.
+- Provide a local CLI for mock commands, safe speak-back, redacted read-only smoke checks, and manual Robinhood Agent handoff prompts. The CLI does not place real trades.
 
 StreetSpeak AI v0.1 current status:
 
@@ -87,6 +88,30 @@ The fixture explorer displays static account summary, buying power, portfolio, p
 The MCP panel is read-only and unavailable by default. If a developer provides an externally managed MCP client at runtime, it can request only `get_accounts`, `get_portfolio`, `get_equity_positions`, `get_equity_quotes`, `get_equity_orders`, `get_equity_tradability`, and `search`. StreetSpeak AI stores no MCP URL, token, broker credential, raw account identifier, raw portfolio value, raw holding, raw order ID, or raw MCP output in the repo or browser local storage by default.
 
 See [docs/design-direction.md](docs/design-direction.md), [docs/v0.1-public-demo-guide.md](docs/v0.1-public-demo-guide.md), [docs/demo-script.md](docs/demo-script.md), and [docs/v0.1-demo-checklist.md](docs/v0.1-demo-checklist.md) for the visual system and reviewer walkthroughs.
+
+## Local CLI
+
+For quick local CLI development, run the TypeScript source directly:
+
+```sh
+pnpm streetspeak:dev status
+pnpm streetspeak:dev demo "buy 5 HOOD"
+pnpm streetspeak:dev robinhood handoff "buy 5 HOOD"
+pnpm streetspeak:dev speak "StreetSpeak AI is ready."
+```
+
+For built CLI usage, build first and then use the production path:
+
+```sh
+pnpm build
+pnpm streetspeak status
+pnpm streetspeak demo "buy 5 HOOD"
+pnpm streetspeak robinhood handoff "buy 5 HOOD"
+```
+
+StreetSpeak CLI does not place real trades, review Robinhood orders, place orders, cancel orders, store broker secrets, print raw MCP output, or provide investment advice. Robinhood Agent handoff is manual only: paste the prompt into the separate connected Robinhood Agent flow if you choose to continue there.
+
+See [docs/cli-quickstart.md](docs/cli-quickstart.md) and [docs/tomorrow-safe-use.md](docs/tomorrow-safe-use.md) for CLI usage and safety boundaries.
 
 ## Browser Voice Input
 
