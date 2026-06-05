@@ -12,6 +12,7 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "pnpm -r typecheck",
     "format": "prettier --write .",
+    "streetspeak": "pnpm --filter @streetspeak-ai/cli start",
     "smoke:robinhood:readonly": "pnpm build && node scripts/robinhood-readonly-smoke-test.mjs"
   },
   "devDependencies": {

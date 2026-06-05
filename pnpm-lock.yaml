@@ -32,6 +32,15 @@ importers:
         specifier: ^3.2.1
         version: 3.2.6(@types/node@22.19.19)
 
+  apps/cli:
+    dependencies:
+      "@streetspeak-ai/brokers":
+        specifier: workspace:*
+        version: link:../../packages/brokers
+      "@streetspeak-ai/core":
+        specifier: workspace:*
+        version: link:../../packages/core
+
   apps/web:
     dependencies:
       "@streetspeak-ai/audit":
