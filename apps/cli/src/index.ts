@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
@@ -29,8 +30,10 @@ export interface StreetSpeakCliRuntime {
   readonly now?: Date;
   readonly challengeCode?: string;
   readonly textToSpeechProvider?: TextToSpeechProvider;
+  readonly runCommand?: CommandRunner;
   readonly robinhoodMcpClient?: RobinhoodMcpReadOnlyClient;
   readonly env?: Readonly<Record<string, string | undefined>>;
+  readonly fetch?: typeof fetch;
   readonly importModule?: (modulePath: string) => Promise<unknown>;
   readonly interactiveInput?: InteractiveInput;
   readonly writeOutput?: (text: string) => void | Promise<void>;
@@ -39,14 +42,27 @@ export interface StreetSpeakCliRuntime {
 
 export type InteractiveInput = AsyncIterable<string> | Iterable<string>;
 
-export type TextToSpeechProviderKind = "macos_say" | "stdout_fallback";
+export type TextToSpeechProviderKind =
+  | "elevenlabs"
+  | "macos_say"
+  | "stdout_fallback";
+
+export type CommandRunner = (
+  command: string,
+  args: readonly string[]
+) => Promise<void>;
 
 export interface TextToSpeechResult {
   readonly provider: TextToSpeechProviderKind;
+  readonly requestedProvider?: TextToSpeechProviderKind;
+  readonly fallbackFrom?: TextToSpeechProviderKind;
+  readonly fallbackReason?: string;
   readonly text: string;
   readonly rawAudioStoredByStreetSpeak: false;
-  readonly command?: "say";
+  readonly command?: "afplay" | "say";
   readonly args?: readonly string[];
+  readonly voice?: string;
+  readonly modelId?: string;
 }
 
 export interface TextToSpeechProvider {
@@ -56,10 +72,11 @@ export interface TextToSpeechProvider {
 
 export interface TextToSpeechProviderOptions {
   readonly platform?: NodeJS.Platform | string;
-  readonly runCommand?: (
-    command: string,
-    args: readonly string[]
-  ) => Promise<void>;
+  readonly provider?: TextToSpeechProviderKind;
+  readonly macosVoice?: string;
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  readonly fetch?: typeof fetch;
+  readonly runCommand?: CommandRunner;
 }
 
 export interface RobinhoodHandoffResult {
@@ -76,6 +93,8 @@ interface InteractiveSessionState {
   readonly input: InteractiveInput;
   readonly commandSource: CommandSource;
   readonly writeOutput?: (text: string) => void | Promise<void>;
+  readonly ttsProvider?: TextToSpeechProviderKind;
+  readonly macosVoice?: string;
   latestTranscript?: string;
   latestState?: MockTradingDeskState;
   latestTicketState?: MockTradingDeskState;
@@ -116,7 +135,7 @@ const HELP_LINES = [
   "",
   "Commands:",
   "  streetspeak",
-  "  streetspeak session [--speak]",
+  "  streetspeak session [--speak] [--tts elevenlabs]",
   "  streetspeak session --transcript-file ./transcript.txt",
   "  streetspeak status",
   '  streetspeak transcript "buy 5 HOOD" [--speak]',
@@ -125,7 +144,7 @@ const HELP_LINES = [
   '  streetspeak demo "buy 5 HOOD" [--speak]',
   "  streetspeak robinhood smoke",
   '  streetspeak robinhood handoff "buy 5 HOOD"',
-  '  streetspeak speak "text"',
+  '  streetspeak speak "text" [--voice Samantha] [--provider elevenlabs]',
   "",
   "Voice bridge input is text transcripts only; StreetSpeak stores no raw audio.",
   "No live trading, order review, order placement, or cancel-order command exists in this CLI."
@@ -166,12 +185,19 @@ export async function runStreetSpeakCli(
   runtime: StreetSpeakCliRuntime = {}
 ): Promise<CliRunResult> {
   const parsed = parseCliArgs(argv);
+
+  if (parsed.error) {
+    return error(parsed.error);
+  }
+
   const [command, ...rest] = parsed.positionals;
 
   if (!command || command === "session") {
     return runInteractiveSession(runtime, {
       initialSpeakEnabled: parsed.speak,
-      transcriptFilePath: parsed.transcriptFilePath
+      transcriptFilePath: parsed.transcriptFilePath,
+      ttsProvider: parsed.ttsProvider,
+      macosVoice: parsed.macosVoice
     });
   }
 
@@ -211,7 +237,12 @@ export async function runStreetSpeakCli(
     const lines = renderTranscriptBridgeState(state, false);
 
     if (parsed.speak) {
-      lines.push(await speakStatusLine(lines.join("\n"), runtime));
+      lines.push(
+        await speakStatusLine(buildSafeSpeakBackText(lines), runtime, {
+          ttsProvider: parsed.ttsProvider,
+          macosVoice: parsed.macosVoice
+        })
+      );
     }
 
     return ok(lines);
@@ -239,7 +270,12 @@ export async function runStreetSpeakCli(
     const lines = renderDemoState(state);
 
     if (parsed.speak) {
-      lines.push(await speakStatusLine(lines.join("\n"), runtime));
+      lines.push(
+        await speakStatusLine(buildSafeSpeakBackText(lines), runtime, {
+          ttsProvider: parsed.ttsProvider,
+          macosVoice: parsed.macosVoice
+        })
+      );
     }
 
     return ok(lines);
@@ -258,7 +294,10 @@ export async function runStreetSpeakCli(
       );
     }
 
-    const provider = getTextToSpeechProvider(runtime);
+    const provider = getTextToSpeechProvider(runtime, {
+      ttsProvider: parsed.ttsProvider,
+      macosVoice: parsed.macosVoice
+    });
     const result = await provider.speak(text);
     const lines =
       result.provider === "stdout_fallback"
@@ -274,6 +313,8 @@ export async function runStreetSpeakCli(
 interface InteractiveSessionOptions {
   readonly initialSpeakEnabled?: boolean;
   readonly transcriptFilePath?: string;
+  readonly ttsProvider?: TextToSpeechProviderKind;
+  readonly macosVoice?: string;
 }
 
 async function runInteractiveSession(
@@ -316,6 +357,8 @@ async function runInteractiveSession(
     commandSource:
       options.transcriptFilePath === undefined ? "keyboard" : "voice",
     writeOutput: runtime.writeOutput,
+    ttsProvider: options.ttsProvider,
+    macosVoice: options.macosVoice,
     speakEnabled: options.initialSpeakEnabled ?? false,
     turnCount: 0
   };
@@ -328,7 +371,9 @@ async function runInteractiveSession(
         "Speak Back",
         [
           "Speak-back is on for this session.",
-          "Responses may use local macOS say or stdout fallback.",
+          `Provider preference: ${describeTextToSpeechPreference(runtime, options)}.`,
+          ...renderTextToSpeechSetupNotice(runtime, options),
+          "Responses speak short safe summaries by default.",
           "No raw audio is stored."
         ],
         state.useColor
@@ -416,6 +461,9 @@ async function runInteractiveCommand(
       "Speak Back",
       [
         "Speak-back is on for future responses.",
+        `Provider preference: ${describeTextToSpeechPreference(runtime, state)}.`,
+        ...renderTextToSpeechSetupNotice(runtime, state),
+        "Responses speak short safe summaries by default.",
         "Use speak off to disable it for this session.",
         "No raw audio is stored."
       ],
@@ -906,8 +954,12 @@ async function emitSessionResponse(
 
   try {
     const statusLine = await speakStatusLine(
-      stripAnsi(lines.join("\n")),
-      runtime
+      buildSafeSpeakBackText(lines),
+      runtime,
+      {
+        ttsProvider: state.ttsProvider,
+        macosVoice: state.macosVoice
+      }
     );
     await emit(state, `${statusLine}\n`);
   } catch {
@@ -990,13 +1042,18 @@ function stripAnsi(value: string): string {
     .replace(new RegExp(`${escape}c`, "gu"), "");
 }
 
-export function buildMacOsSayCommand(text: string): {
+export function buildMacOsSayCommand(
+  text: string,
+  voice?: string
+): {
   readonly command: "say";
   readonly args: readonly string[];
 } {
+  const normalizedVoice = normalizeOptionalString(voice);
+
   return {
     command: "say",
-    args: [text]
+    args: normalizedVoice ? ["-v", normalizedVoice, text] : [text]
   };
 }
 
@@ -1004,12 +1061,44 @@ export function createTextToSpeechProvider(
   options: TextToSpeechProviderOptions = {}
 ): TextToSpeechProvider {
   const platform = options.platform ?? process.platform;
+  const env = options.env ?? process.env;
+  const provider = resolveTextToSpeechProviderKind(
+    options.provider,
+    env,
+    platform
+  );
 
-  if (platform === "darwin") {
+  if (provider === "elevenlabs") {
+    return createElevenLabsTextToSpeechProvider({
+      ...options,
+      env,
+      platform
+    });
+  }
+
+  return createLocalTextToSpeechProvider({
+    ...options,
+    env,
+    platform,
+    provider
+  });
+}
+
+function createLocalTextToSpeechProvider(
+  options: TextToSpeechProviderOptions
+): TextToSpeechProvider {
+  const platform = options.platform ?? process.platform;
+
+  if (options.provider !== "stdout_fallback" && platform === "darwin") {
+    const env = options.env ?? process.env;
+    const voice =
+      normalizeOptionalString(options.macosVoice) ??
+      normalizeOptionalString(env.STREETSPEAK_MACOS_VOICE);
+
     return {
       kind: "macos_say",
       async speak(text: string): Promise<TextToSpeechResult> {
-        const command = buildMacOsSayCommand(text);
+        const command = buildMacOsSayCommand(text, voice);
         await (options.runCommand ?? runCommand)(command.command, command.args);
 
         return {
@@ -1017,12 +1106,17 @@ export function createTextToSpeechProvider(
           text,
           rawAudioStoredByStreetSpeak: false,
           command: command.command,
-          args: command.args
+          args: command.args,
+          ...(voice === undefined ? {} : { voice })
         };
       }
     };
   }
 
+  return createStdoutFallbackTextToSpeechProvider();
+}
+
+function createStdoutFallbackTextToSpeechProvider(): TextToSpeechProvider {
   return {
     kind: "stdout_fallback",
     async speak(text: string): Promise<TextToSpeechResult> {
@@ -1033,6 +1127,368 @@ export function createTextToSpeechProvider(
       };
     }
   };
+}
+
+function createElevenLabsTextToSpeechProvider(
+  options: TextToSpeechProviderOptions
+): TextToSpeechProvider {
+  const platform = options.platform ?? process.platform;
+  const env = options.env ?? process.env;
+
+  return {
+    kind: "elevenlabs",
+    async speak(text: string): Promise<TextToSpeechResult> {
+      const safeText = sanitizeTextForRemoteTts(text);
+      const apiKey = normalizeOptionalString(env.ELEVENLABS_API_KEY);
+      const voiceId = normalizeOptionalString(env.ELEVENLABS_VOICE_ID);
+      if (apiKey === undefined || voiceId === undefined) {
+        const missing = [
+          ...(apiKey === undefined ? ["ELEVENLABS_API_KEY"] : []),
+          ...(voiceId === undefined ? ["ELEVENLABS_VOICE_ID"] : [])
+        ];
+
+        return speakWithElevenLabsFallback(
+          safeText,
+          options,
+          `missing ${formatMissingEnvList(missing)}`
+        );
+      }
+
+      if (platform !== "darwin") {
+        return speakWithElevenLabsFallback(
+          safeText,
+          options,
+          "local playback unavailable on this platform"
+        );
+      }
+
+      const fetchImplementation = options.fetch ?? globalThis.fetch;
+
+      if (!fetchImplementation) {
+        return speakWithElevenLabsFallback(
+          safeText,
+          options,
+          "fetch is unavailable in this runtime"
+        );
+      }
+
+      const configuredApiKey = apiKey;
+      const configuredVoiceId = voiceId;
+      const modelId =
+        normalizeOptionalString(env.ELEVENLABS_MODEL_ID) ??
+        "eleven_multilingual_v2";
+      const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(
+        configuredVoiceId
+      )}`;
+
+      try {
+        const response = await fetchImplementation(url, {
+          method: "POST",
+          headers: {
+            Accept: "audio/mpeg",
+            "Content-Type": "application/json",
+            "xi-api-key": configuredApiKey
+          },
+          body: JSON.stringify({
+            text: safeText,
+            model_id: modelId
+          })
+        });
+
+        if (!response.ok) {
+          return speakWithElevenLabsFallback(
+            safeText,
+            options,
+            `request failed with HTTP ${response.status}`
+          );
+        }
+
+        const audio = await response.arrayBuffer();
+
+        if (audio.byteLength === 0) {
+          return speakWithElevenLabsFallback(
+            safeText,
+            options,
+            "empty audio response"
+          );
+        }
+
+        const playback = await playElevenLabsAudio(audio, options, platform);
+
+        return {
+          provider: "elevenlabs",
+          requestedProvider: "elevenlabs",
+          text: safeText,
+          rawAudioStoredByStreetSpeak: false,
+          command: playback.command,
+          args: playback.args,
+          modelId
+        };
+      } catch {
+        return speakWithElevenLabsFallback(
+          safeText,
+          options,
+          "request or local playback failed"
+        );
+      }
+    }
+  };
+}
+
+async function speakWithElevenLabsFallback(
+  text: string,
+  options: TextToSpeechProviderOptions,
+  fallbackReason: string
+): Promise<TextToSpeechResult> {
+  const fallbackProvider = createLocalTextToSpeechProvider({
+    ...options,
+    provider: undefined
+  });
+  const result = await fallbackProvider.speak(text);
+
+  return {
+    ...result,
+    requestedProvider: "elevenlabs",
+    fallbackFrom: "elevenlabs",
+    fallbackReason
+  };
+}
+
+async function playElevenLabsAudio(
+  audio: ArrayBuffer,
+  options: TextToSpeechProviderOptions,
+  platform: NodeJS.Platform | string
+): Promise<{
+  readonly command: "afplay";
+  readonly args: readonly string[];
+}> {
+  if (platform !== "darwin") {
+    throw new Error("local audio playback unavailable on this platform");
+  }
+
+  const directory = await mkdtemp(path.join(tmpdir(), "streetspeak-tts-"));
+  const audioPath = path.join(directory, "elevenlabs.mp3");
+  const playback = {
+    command: "afplay" as const,
+    args: [audioPath] as const
+  };
+
+  try {
+    await writeFile(audioPath, new Uint8Array(audio));
+    await (options.runCommand ?? runCommand)(playback.command, playback.args);
+
+    return playback;
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+function resolveTextToSpeechProviderKind(
+  provider: TextToSpeechProviderKind | undefined,
+  env: Readonly<Record<string, string | undefined>>,
+  platform: NodeJS.Platform | string
+): TextToSpeechProviderKind {
+  const envProvider = normalizeTextToSpeechProvider(
+    env.STREETSPEAK_TTS_PROVIDER
+  );
+
+  return (
+    provider ??
+    envProvider ??
+    (platform === "darwin" ? "macos_say" : "stdout_fallback")
+  );
+}
+
+function sanitizeTextForRemoteTts(text: string): string {
+  const collapsed = text.replace(/\s+/gu, " ").trim();
+  const redacted = collapsed
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gu, "Bearer [redacted]")
+    .replace(
+      /\b(api[_-]?key|authorization|password|secret|token)\s*[:=]\s*[^,\s]+/giu,
+      "$1 [redacted]"
+    )
+    .replace(
+      /\b(account(?:[_-]?(?:id|number))?)\s*[:=]\s*[^,\s]+/giu,
+      "$1 [redacted]"
+    )
+    .replace(/\b(order(?:[_-]?id)?)\s*[:=]\s*[^,\s]+/giu, "$1 [redacted]")
+    .replace(/\braw MCP output\b/giu, "redacted MCP output");
+
+  if (redacted.length <= 500) {
+    return redacted;
+  }
+
+  return `${redacted.slice(0, 497)}...`;
+}
+
+function buildSafeSpeakBackText(lines: readonly string[]): string {
+  const text = stripAnsi(lines.join("\n"));
+  const normalized = text.toLowerCase();
+
+  if (normalized.includes("robinhood agent handoff")) {
+    return "Handoff prompt is ready. StreetSpeak did not send, review, place, or cancel an order.";
+  }
+
+  if (normalized.includes("robinhood smoke status")) {
+    return "Robinhood read-only smoke status is ready. Raw MCP output was not spoken.";
+  }
+
+  if (normalized.includes("mock submission complete")) {
+    return "Mock submission receipt is ready. No live broker order was placed.";
+  }
+
+  if (normalized.includes("confirmation rejected")) {
+    return "Confirmation rejected. Use the exact mock confirmation phrase and code. No live broker order was placed.";
+  }
+
+  if (
+    normalized.includes("mock ticket") ||
+    normalized.includes("awaiting_confirmation") ||
+    normalized.includes("exact confirmation required")
+  ) {
+    return "Mock ticket created. Exact confirmation is required before mock submission. No live broker order was placed.";
+  }
+
+  if (
+    normalized.includes("portfolio summary") ||
+    normalized.includes("mock portfolio") ||
+    normalized.includes("mock buying power")
+  ) {
+    return "Mock portfolio summary is ready. Source is mock static data only. No live broker order was placed.";
+  }
+
+  if (
+    normalized.includes("quote result") ||
+    normalized.includes("mock static quote")
+  ) {
+    return "Mock quote result is ready. Source is mock static data only. No live broker order was placed.";
+  }
+
+  if (normalized.includes("receipt")) {
+    return "Mock receipt is ready. No live broker order was placed.";
+  }
+
+  if (normalized.includes("status")) {
+    return "StreetSpeak status is ready. Live trading, order review, order placement, and cancel order remain unavailable.";
+  }
+
+  if (normalized.includes("help")) {
+    return "StreetSpeak help is ready. No live broker order was placed.";
+  }
+
+  return "StreetSpeak response is ready. No live broker order was placed.";
+}
+
+function renderTextToSpeechSetupNotice(
+  runtime: StreetSpeakCliRuntime,
+  options: Pick<InteractiveSessionState, "macosVoice" | "ttsProvider">
+): readonly string[] {
+  if (runtime.textToSpeechProvider) {
+    return [];
+  }
+
+  const env = runtime.env ?? process.env;
+  const platform = runtime.platform ?? process.platform;
+  const provider = resolveTextToSpeechProviderKind(
+    options.ttsProvider,
+    env,
+    platform
+  );
+
+  if (provider !== "elevenlabs") {
+    const voice =
+      normalizeOptionalString(options.macosVoice) ??
+      normalizeOptionalString(env.STREETSPEAK_MACOS_VOICE);
+
+    return voice && platform === "darwin" ? [`macOS voice: ${voice}.`] : [];
+  }
+
+  const missing = [
+    ...(normalizeOptionalString(env.ELEVENLABS_API_KEY) === undefined
+      ? ["ELEVENLABS_API_KEY"]
+      : []),
+    ...(normalizeOptionalString(env.ELEVENLABS_VOICE_ID) === undefined
+      ? ["ELEVENLABS_VOICE_ID"]
+      : [])
+  ];
+
+  if (missing.length === 0) {
+    return [
+      "ElevenLabs is selected for CLI speak-back only.",
+      "Only short safe summaries are sent to remote TTS."
+    ];
+  }
+
+  return [
+    `ElevenLabs setup incomplete: missing ${formatMissingEnvList(missing)}.`,
+    "Speak-back will fall back to local macOS say or stdout."
+  ];
+}
+
+function describeTextToSpeechPreference(
+  runtime: StreetSpeakCliRuntime,
+  options: Pick<InteractiveSessionState, "macosVoice" | "ttsProvider">
+): string {
+  if (runtime.textToSpeechProvider) {
+    return formatTextToSpeechProviderKind(runtime.textToSpeechProvider.kind);
+  }
+
+  const env = runtime.env ?? process.env;
+  const platform = runtime.platform ?? process.platform;
+
+  return formatTextToSpeechProviderKind(
+    resolveTextToSpeechProviderKind(options.ttsProvider, env, platform)
+  );
+}
+
+function normalizeOptionalString(
+  value: string | undefined
+): string | undefined {
+  const normalized = value?.trim();
+
+  return normalized ? normalized : undefined;
+}
+
+function normalizeTextToSpeechProvider(
+  value: string | undefined
+): TextToSpeechProviderKind | undefined {
+  const normalized = value?.trim().toLowerCase().replaceAll("-", "_");
+
+  switch (normalized) {
+    case "elevenlabs":
+    case "eleven_labs":
+      return "elevenlabs";
+    case "macos":
+    case "macos_say":
+    case "say":
+      return "macos_say";
+    case "stdout":
+    case "stdout_fallback":
+      return "stdout_fallback";
+    default:
+      return undefined;
+  }
+}
+
+function formatTextToSpeechProviderKind(
+  provider: TextToSpeechProviderKind
+): string {
+  switch (provider) {
+    case "elevenlabs":
+      return "ElevenLabs";
+    case "macos_say":
+      return "macOS say";
+    case "stdout_fallback":
+      return "stdout fallback";
+  }
+}
+
+function formatMissingEnvList(items: readonly string[]): string {
+  if (items.length === 1) {
+    return items[0] ?? "required environment variable";
+  }
+
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
 export function buildRobinhoodAgentHandoff(
@@ -1099,12 +1555,18 @@ export function buildRobinhoodAgentHandoff(
 
 function parseCliArgs(argv: readonly string[]): {
   readonly speak: boolean;
+  readonly ttsProvider?: TextToSpeechProviderKind;
+  readonly macosVoice?: string;
   readonly transcriptFilePath?: string;
   readonly positionals: readonly string[];
+  readonly error?: string;
 } {
   const positionals: string[] = [];
   let speak = false;
+  let ttsProvider: TextToSpeechProviderKind | undefined;
+  let macosVoice: string | undefined;
   let transcriptFilePath: string | undefined;
+  let parseError: string | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -1115,6 +1577,66 @@ function parseCliArgs(argv: readonly string[]): {
 
     if (arg === "--speak") {
       speak = true;
+      continue;
+    }
+
+    if (arg === "--provider" || arg === "--tts") {
+      const nextArg = argv[index + 1];
+      if (!nextArg || nextArg.startsWith("--")) {
+        parseError = `Provide a provider after ${arg}. Use elevenlabs, macos, or stdout.`;
+        continue;
+      }
+
+      const parsedProvider = normalizeTextToSpeechProvider(nextArg);
+      if (parsedProvider === undefined) {
+        parseError = `Unsupported TTS provider: ${nextArg}. Use elevenlabs, macos, or stdout.`;
+        index += 1;
+        continue;
+      }
+
+      ttsProvider = parsedProvider;
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--provider=")) {
+      const value = arg.slice("--provider=".length);
+      const parsedProvider = normalizeTextToSpeechProvider(value);
+      if (parsedProvider === undefined) {
+        parseError = `Unsupported TTS provider: ${value}. Use elevenlabs, macos, or stdout.`;
+        continue;
+      }
+
+      ttsProvider = parsedProvider;
+      continue;
+    }
+
+    if (arg.startsWith("--tts=")) {
+      const value = arg.slice("--tts=".length);
+      const parsedProvider = normalizeTextToSpeechProvider(value);
+      if (parsedProvider === undefined) {
+        parseError = `Unsupported TTS provider: ${value}. Use elevenlabs, macos, or stdout.`;
+        continue;
+      }
+
+      ttsProvider = parsedProvider;
+      continue;
+    }
+
+    if (arg === "--voice") {
+      const nextArg = argv[index + 1];
+      if (!nextArg || nextArg.startsWith("--")) {
+        parseError = "Provide a macOS voice name after --voice.";
+        continue;
+      }
+
+      macosVoice = nextArg;
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--voice=")) {
+      macosVoice = arg.slice("--voice=".length);
       continue;
     }
 
@@ -1140,8 +1662,11 @@ function parseCliArgs(argv: readonly string[]): {
 
   return {
     speak,
+    ...(ttsProvider === undefined ? {} : { ttsProvider }),
+    ...(macosVoice === undefined ? {} : { macosVoice }),
     ...(transcriptFilePath === undefined ? {} : { transcriptFilePath }),
-    positionals
+    positionals,
+    ...(parseError === undefined ? {} : { error: parseError })
   };
 }
 
@@ -1397,24 +1922,41 @@ function toImportSpecifier(modulePath: string): string {
 
 async function speakStatusLine(
   text: string,
-  runtime: StreetSpeakCliRuntime
+  runtime: StreetSpeakCliRuntime,
+  options: Pick<InteractiveSessionState, "macosVoice" | "ttsProvider"> = {}
 ): Promise<string> {
-  const provider = getTextToSpeechProvider(runtime);
+  const provider = getTextToSpeechProvider(runtime, options);
   const result = await provider.speak(text);
 
   return renderTtsProviderLine(result);
 }
 
 function getTextToSpeechProvider(
-  runtime: StreetSpeakCliRuntime
+  runtime: StreetSpeakCliRuntime,
+  options: Pick<InteractiveSessionState, "macosVoice" | "ttsProvider"> = {}
 ): TextToSpeechProvider {
   return (
     runtime.textToSpeechProvider ??
-    createTextToSpeechProvider({ platform: runtime.platform })
+    createTextToSpeechProvider({
+      platform: runtime.platform,
+      provider: options.ttsProvider,
+      macosVoice: options.macosVoice,
+      env: runtime.env,
+      fetch: runtime.fetch,
+      runCommand: runtime.runCommand
+    })
   );
 }
 
 function renderTtsProviderLine(result: TextToSpeechResult): string {
+  if (result.fallbackFrom === "elevenlabs") {
+    return `StreetSpeak TTS: ElevenLabs unavailable (${result.fallbackReason ?? "setup incomplete"}); ${formatTextToSpeechProviderKind(result.provider)} used. No raw audio stored.`;
+  }
+
+  if (result.provider === "elevenlabs") {
+    return "StreetSpeak TTS: ElevenLabs provider used for local playback. Temporary audio deleted. No raw audio stored.";
+  }
+
   return result.provider === "macos_say"
     ? "StreetSpeak TTS: macOS say provider used. No raw audio stored."
     : "StreetSpeak TTS: stdout fallback used. No raw audio stored.";

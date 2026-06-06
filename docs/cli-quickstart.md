@@ -20,6 +20,9 @@ pnpm streetspeak:dev transcript "buy 5 HOOD"
 pnpm streetspeak:dev demo "buy 5 HOOD"
 pnpm streetspeak:dev robinhood handoff "buy 5 HOOD"
 pnpm streetspeak:dev speak "StreetSpeak AI is ready."
+pnpm streetspeak:dev speak "StreetSpeak AI is ready." --voice Samantha
+pnpm streetspeak:dev speak "StreetSpeak AI is ready." --provider elevenlabs
+pnpm streetspeak:dev session --speak --tts elevenlabs
 ```
 
 The dev wrapper uses the minimal `tsx` dev dependency so Dean can run CLI commands without first generating `dist/` output.
@@ -146,9 +149,40 @@ pnpm streetspeak speak "mock ticket only"
 pnpm streetspeak demo "show my portfolio" --speak
 ```
 
-On macOS, the CLI uses the local `say` command. On other platforms, it falls back to stdout. StreetSpeak does not use ElevenLabs, API keys, external TTS services, or raw audio storage.
+On macOS, the CLI uses the local `say` command. On other platforms, it falls back to stdout. Optional ElevenLabs is available only when explicitly selected and configured with local BYO env vars. StreetSpeak does not store raw audio.
 
 `session --speak` starts the interactive session with speak-back enabled. Inside a session, `speak on` and `speak off` toggle only the current process.
+
+Session speak-back uses short safe summaries by default. It must not speak or send broker credentials, API keys, account identifiers, portfolio values, raw MCP output, tokens, full Robinhood Agent handoff prompts, real account data, or generated audio. The `handoff` command may speak only a summary such as `Handoff prompt is ready.`
+
+## TTS Providers
+
+The CLI-local TTS provider order is:
+
+- Explicit flags such as `--provider elevenlabs`, `--tts elevenlabs`, `--provider macos`, or `--provider stdout`.
+- `STREETSPEAK_TTS_PROVIDER=elevenlabs`.
+- Local macOS `say` on macOS, otherwise stdout fallback.
+
+macOS voice selection:
+
+```sh
+pnpm streetspeak:dev speak "StreetSpeak AI is ready." --voice Samantha
+STREETSPEAK_MACOS_VOICE=Samantha pnpm streetspeak:dev session --speak
+```
+
+ElevenLabs is optional and uses Dean's own local key only:
+
+```sh
+export ELEVENLABS_API_KEY="your-local-key"
+export ELEVENLABS_VOICE_ID="your-local-voice-id"
+export ELEVENLABS_MODEL_ID="eleven_multilingual_v2" # optional default
+
+pnpm streetspeak:dev speak "StreetSpeak AI is ready." --provider elevenlabs
+pnpm streetspeak:dev session --speak --tts elevenlabs
+STREETSPEAK_TTS_PROVIDER=elevenlabs pnpm streetspeak:dev session --speak
+```
+
+If `ELEVENLABS_API_KEY` or `ELEVENLABS_VOICE_ID` is missing, the CLI prints the missing variable name and falls back safely to local macOS `say` or stdout. It never prints the API key value. ElevenLabs audio is written only to a temp file when needed for local playback, then deleted after playback. Do not commit `.env` files or generated audio.
 
 ## Text Transcript Bridge
 
