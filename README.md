@@ -38,6 +38,7 @@ StreetSpeak AI v0.1 is a local mock trading desk demo. It can:
 - Show the `Real Robinhood MCP Read-Only Connection` panel for externally managed MCP clients. The default state is unavailable/unconfigured unless the host page provides a read-only client at runtime.
 - Expose Robinhood read-only adapter contracts for fixture data and externally managed MCP read-only data. Neither path includes order review, order placement, cancel order, or live execution.
 - Provide a local CLI for mock commands, safe speak-back, redacted read-only smoke checks, and manual Robinhood Agent handoff prompts. The CLI does not place real trades.
+- Support CLI-local TTS through stdout fallback, local macOS `say`, and optional BYO ElevenLabs for speak-back only.
 - Accept text transcripts from local dictation tools in the CLI and route them through the same mock-only command path. The CLI does not record, upload, or store raw audio.
 
 StreetSpeak AI v0.1 current status:
@@ -103,6 +104,10 @@ pnpm streetspeak:dev transcript "buy 5 HOOD"
 pnpm streetspeak:dev demo "buy 5 HOOD"
 pnpm streetspeak:dev robinhood handoff "buy 5 HOOD"
 pnpm streetspeak:dev speak "StreetSpeak AI is ready."
+pnpm streetspeak:dev speak "StreetSpeak AI is ready." --voice Samantha
+pnpm streetspeak:dev speak "StreetSpeak AI is ready." --provider elevenlabs
+STREETSPEAK_MACOS_VOICE=Samantha pnpm streetspeak:dev session --speak
+STREETSPEAK_TTS_PROVIDER=elevenlabs pnpm streetspeak:dev session --speak
 ```
 
 For built CLI usage, build first and then use the production path:
@@ -120,17 +125,21 @@ pnpm streetspeak robinhood handoff "buy 5 HOOD"
 
 Launching with no command opens the interactive terminal session with the StreetSpeak AI banner, `Voice-native trading desk for AI agents`, mock/read-only/live-trading status lines, and safety boundaries. Session commands include `help`, `status`, `show my portfolio`, `what is HOOD trading at`, `buy 5 HOOD`, `confirm <exact phrase>`, `receipt`, `handoff`, `smoke`, `speak on`, `speak off`, `clear`, and `exit`. `session --speak` enables local speak-back for the current process only; no persistent CLI config is written.
 
-For tomorrow's terminal dictation workflow, use macOS Dictation, Wispr Flow, or another local dictation tool to put text into the terminal. You can paste into the interactive session, run `pnpm streetspeak:dev transcript "buy 5 HOOD"`, or save text locally and run `pnpm streetspeak:dev session --transcript-file ./transcript.txt`. StreetSpeak treats these as text transcripts only. It does not bundle Whisper or any speech-to-text model, does not require API keys, does not upload audio to a StreetSpeak server, and does not store transcript or raw audio copies by default.
+By default, CLI speak-back uses local macOS `say` on macOS and stdout fallback elsewhere. macOS voice selection is available with `--voice Samantha` or `STREETSPEAK_MACOS_VOICE=Samantha`. Optional ElevenLabs speak-back uses Dean's own local env vars only: `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, optional `ELEVENLABS_MODEL_ID` defaulting to `eleven_multilingual_v2`, and optional `STREETSPEAK_TTS_PROVIDER=elevenlabs`. Missing ElevenLabs setup falls back safely to local `say` or stdout without printing the key.
+
+Do not send secrets, broker credentials, account IDs, portfolio values, raw MCP output, tokens, generated audio, or real account data to TTS. Session speak-back uses short safe summaries by default. The `handoff` command may speak only a safe summary such as "handoff prompt is ready"; it does not speak the full handoff prompt.
+
+For tomorrow's terminal dictation workflow, use macOS Dictation, Wispr Flow, or another local dictation tool to put text into the terminal. You can paste into the interactive session, run `pnpm streetspeak:dev transcript "buy 5 HOOD"`, or save text locally and run `pnpm streetspeak:dev session --transcript-file ./transcript.txt`. StreetSpeak treats these as text transcripts only. It does not bundle Whisper or any speech-to-text model, does not require speech-to-text API keys, does not upload audio to a StreetSpeak server, and does not store transcript or raw audio copies by default.
 
 StreetSpeak CLI does not place real trades, review Robinhood orders, place orders, cancel orders, store broker secrets, print raw MCP output, or provide investment advice. Robinhood Agent handoff is manual only: paste the prompt into the separate connected Robinhood Agent flow if you choose to continue there. Do not place anything unless separately confirmed inside Robinhood Agent. Actual quote lookup, order review, approval, and any real broker action happen outside StreetSpeak. Interactive session state is in memory only and is cleared when the process exits.
 
-See [docs/cli-quickstart.md](docs/cli-quickstart.md) and [docs/tomorrow-safe-use.md](docs/tomorrow-safe-use.md) for CLI usage and safety boundaries.
+See [docs/cli-quickstart.md](docs/cli-quickstart.md), [docs/tomorrow-safe-use.md](docs/tomorrow-safe-use.md), [docs/elevenlabs-tts.md](docs/elevenlabs-tts.md), and [docs/voice-provider-roadmap.md](docs/voice-provider-roadmap.md) for CLI usage, TTS setup, and safety boundaries.
 
 ## Browser Voice Input
 
 Browser voice input is optional in the web app. When enabled in the local settings panel, StreetSpeak AI feature-detects the browser's built-in speech recognition support. If the browser does not expose a compatible speech recognition API, the app shows an unsupported status and typed input remains the reliable path.
 
-When supported, the browser produces a text transcript and StreetSpeak AI sends that transcript through the same mock command parser used by typed input. StreetSpeak AI does not use ElevenLabs, does not require speech API keys, does not store raw audio, and does not send raw audio to a StreetSpeak server. Browser-native speech behavior can vary by browser and device.
+When supported, the browser produces a text transcript and StreetSpeak AI sends that transcript through the same mock command parser used by typed input. The web app does not use ElevenLabs, does not require speech API keys, does not store raw audio, and does not send raw audio to a StreetSpeak server. Browser-native speech behavior can vary by browser and device.
 
 The CLI follows the same transcript boundary for terminal dictation: text in, mock command handling out. Never paste secrets, account IDs, tokens, MCP URLs, raw MCP output, raw audio paths, or real account data into transcript commands, docs, screenshots, PRs, or handoffs.
 
@@ -202,7 +211,7 @@ The current Robinhood MCP boundary has no broker login, stored credentials, orde
 
 Public adapter support is also planned for a later phase. It is not implemented yet.
 
-ElevenLabs voice support is also not implemented yet.
+Optional ElevenLabs TTS is implemented only for local CLI speak-back with a BYO key. It does not add live trading, order review, order placement, cancel order, broker login, analytics, speech-to-text, raw audio storage, or a StreetSpeak-hosted voice service.
 
 StreetSpeak AI is not affiliated with Robinhood, Public, ElevenLabs, or any broker or voice provider.
 
@@ -237,7 +246,7 @@ Configure environment variables:
 cp .env.example .env.local
 ```
 
-StreetSpeak AI starts in mock mode and should not require real secrets for local development. Keep real credentials out of git. Add placeholder variable names to `.env.example` only when new environment variables are introduced.
+StreetSpeak AI starts in mock mode and should not require real secrets for local development. Keep real credentials out of git. Optional ElevenLabs CLI TTS is BYO-key local configuration only; do not commit `.env`, generated audio, API keys, broker credentials, account data, or raw MCP output. Add placeholder variable names to `.env.example` only when new environment variables are introduced.
 
 Run locally:
 

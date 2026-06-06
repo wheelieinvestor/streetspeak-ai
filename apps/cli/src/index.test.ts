@@ -185,8 +185,9 @@ describe("StreetSpeak CLI", () => {
 
     expect(result.exitCode).toBe(0);
     expect(spoken).toHaveLength(1);
-    expect(spoken[0]).toContain("Voice Transcript Bridge");
-    expect(spoken[0]).toContain("$12,500.00 mock buying power");
+    expect(spoken[0]).toBe(
+      "Mock portfolio summary is ready. Source is mock static data only. No live broker order was placed."
+    );
     expect(result.stdout).toContain(
       "StreetSpeak TTS: stdout fallback used. No raw audio stored."
     );
@@ -463,6 +464,174 @@ describe("StreetSpeak CLI", () => {
     });
   });
 
+  it("passes macOS voice flags and env fallback to say", async () => {
+    const flagCalls: Array<{ command: string; args: readonly string[] }> = [];
+    const envCalls: Array<{ command: string; args: readonly string[] }> = [];
+
+    const flagResult = await runStreetSpeakCli(
+      ["speak", "StreetSpeak AI is ready.", "--voice", "Samantha"],
+      {
+        platform: "darwin",
+        async runCommand(commandName, args) {
+          flagCalls.push({ command: commandName, args });
+        }
+      }
+    );
+    const envProvider = createTextToSpeechProvider({
+      platform: "darwin",
+      env: {
+        STREETSPEAK_MACOS_VOICE: "Samantha"
+      },
+      async runCommand(commandName, args) {
+        envCalls.push({ command: commandName, args });
+      }
+    });
+    const envResult = await envProvider.speak("StreetSpeak AI is ready.");
+
+    expect(
+      buildMacOsSayCommand("StreetSpeak AI is ready.", "Samantha")
+    ).toEqual({
+      command: "say",
+      args: ["-v", "Samantha", "StreetSpeak AI is ready."]
+    });
+    expect(flagResult.exitCode).toBe(0);
+    expect(flagCalls).toEqual([
+      {
+        command: "say",
+        args: ["-v", "Samantha", "StreetSpeak AI is ready."]
+      }
+    ]);
+    expect(envCalls).toEqual([
+      {
+        command: "say",
+        args: ["-v", "Samantha", "StreetSpeak AI is ready."]
+      }
+    ]);
+    expect(envResult).toMatchObject({
+      provider: "macos_say",
+      voice: "Samantha"
+    });
+  });
+
+  it("falls back safely when ElevenLabs API key is missing", async () => {
+    const result = await runStreetSpeakCli(
+      ["speak", "StreetSpeak AI is ready.", "--provider", "elevenlabs"],
+      {
+        platform: "linux",
+        env: {
+          ELEVENLABS_VOICE_ID: "voice-id"
+        }
+      }
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("StreetSpeak AI is ready.");
+    expect(result.stdout).toContain(
+      "StreetSpeak TTS: ElevenLabs unavailable (missing ELEVENLABS_API_KEY); stdout fallback used. No raw audio stored."
+    );
+  });
+
+  it("falls back safely when ElevenLabs voice ID is missing without printing the API key", async () => {
+    const apiKey = "test-elevenlabs-secret-key";
+    const result = await runStreetSpeakCli(
+      ["speak", "StreetSpeak AI is ready.", "--provider", "elevenlabs"],
+      {
+        platform: "linux",
+        env: {
+          ELEVENLABS_API_KEY: apiKey
+        }
+      }
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain(
+      "StreetSpeak TTS: ElevenLabs unavailable (missing ELEVENLABS_VOICE_ID); stdout fallback used. No raw audio stored."
+    );
+    expect(result.stdout).not.toContain(apiKey);
+    expect(result.stderr).not.toContain(apiKey);
+  });
+
+  it("constructs ElevenLabs requests with mocked fetch and never prints the key", async () => {
+    const apiKey = "test-elevenlabs-secret-key";
+    const fetchCalls: Array<{ input: RequestInfo | URL; init?: RequestInit }> =
+      [];
+    const playbackCalls: Array<{ command: string; args: readonly string[] }> =
+      [];
+    const fakeFetch: typeof fetch = async (
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ): Promise<Response> => {
+      fetchCalls.push({ input, init });
+
+      return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+    };
+
+    const result = await runStreetSpeakCli(
+      ["speak", "StreetSpeak AI is ready.", "--provider", "elevenlabs"],
+      {
+        platform: "darwin",
+        env: {
+          ELEVENLABS_API_KEY: apiKey,
+          ELEVENLABS_VOICE_ID: "voice-123",
+          ELEVENLABS_MODEL_ID: "eleven-test-model"
+        },
+        fetch: fakeFetch,
+        async runCommand(commandName, args) {
+          playbackCalls.push({ command: commandName, args });
+        }
+      }
+    );
+    const request = fetchCalls[0];
+
+    if (!request) {
+      throw new Error("expected ElevenLabs fetch call");
+    }
+
+    const headers = request.init?.headers as Record<string, string>;
+    const body = JSON.parse(String(request.init?.body ?? "{}")) as {
+      readonly text?: string;
+      readonly model_id?: string;
+    };
+
+    expect(result.exitCode).toBe(0);
+    expect(String(request.input)).toBe(
+      "https://api.elevenlabs.io/v1/text-to-speech/voice-123"
+    );
+    expect(request.init?.method).toBe("POST");
+    expect(headers["xi-api-key"]).toBe(apiKey);
+    expect(headers["Content-Type"]).toBe("application/json");
+    expect(body).toEqual({
+      text: "StreetSpeak AI is ready.",
+      model_id: "eleven-test-model"
+    });
+    expect(playbackCalls).toHaveLength(1);
+    expect(playbackCalls[0]?.command).toBe("afplay");
+    expect(result.stdout).toContain(
+      "StreetSpeak TTS: ElevenLabs provider used for local playback. Temporary audio deleted. No raw audio stored."
+    );
+    expect(result.stdout).not.toContain(apiKey);
+    expect(result.stderr).not.toContain(apiKey);
+  });
+
+  it("uses env provider selection for session speak and reports missing ElevenLabs setup", async () => {
+    const result = await runStreetSpeakCli(["session", "--speak"], {
+      platform: "linux",
+      env: {
+        STREETSPEAK_TTS_PROVIDER: "elevenlabs"
+      },
+      interactiveInput: ["status", "exit"]
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Provider preference: ElevenLabs.");
+    expect(result.stdout).toContain(
+      "ElevenLabs setup incomplete: missing ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID."
+    );
+    expect(result.stdout).toContain(
+      "StreetSpeak TTS: ElevenLabs unavailable (missing ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID); stdout fallback used. No raw audio stored."
+    );
+  });
+
   it("uses stdout fallback for speak on non-macOS platforms", async () => {
     const result = await runStreetSpeakCli(["speak", "mock ticket only"], {
       platform: "linux"
@@ -502,7 +671,9 @@ describe("StreetSpeak CLI", () => {
       "StreetSpeak TTS: stdout fallback used. No raw audio stored."
     );
     expect(spoken).toHaveLength(1);
-    expect(spoken[0]).toContain("Mock trading desk: available");
+    expect(spoken[0]).toBe(
+      "StreetSpeak status is ready. Live trading, order review, order placement, and cancel order remain unavailable."
+    );
   });
 
   it("starts session --speak with speak-back enabled for the session only", async () => {
@@ -527,6 +698,7 @@ describe("StreetSpeak CLI", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("Speak-back is on for this session.");
+    expect(result.stdout).toContain("Provider preference: stdout fallback.");
     expect(result.stdout).toContain("Speak-back is off.");
     expect(result.stdout).toContain(
       "Preferences are per-session only; no config file was written."
@@ -535,7 +707,9 @@ describe("StreetSpeak CLI", () => {
       "StreetSpeak TTS: stdout fallback used. No raw audio stored."
     );
     expect(spoken).toHaveLength(1);
-    expect(spoken[0]).toContain("Mock trading desk: available");
+    expect(spoken[0]).toBe(
+      "StreetSpeak status is ready. Live trading, order review, order placement, and cancel order remain unavailable."
+    );
   });
 
   it("clears the interactive terminal without persisting state to disk", async () => {
@@ -574,7 +748,9 @@ describe("StreetSpeak CLI", () => {
 
     expect(result.exitCode).toBe(0);
     expect(spoken).toHaveLength(1);
-    expect(spoken[0]).toContain("$12,500.00 mock buying power");
+    expect(spoken[0]).toBe(
+      "Mock portfolio summary is ready. Source is mock static data only. No live broker order was placed."
+    );
     expect(result.stdout).toContain(
       "StreetSpeak TTS: stdout fallback used. No raw audio stored."
     );
@@ -677,6 +853,116 @@ describe("StreetSpeak CLI", () => {
     expect(result.stdout).not.toContain("112.4");
     expect(result.stdout).not.toContain("22.48");
     expect(result.stdout).not.toContain("order-raw-789");
+  });
+
+  it("does not speak raw MCP payload values during session smoke speak-back", async () => {
+    const spoken: string[] = [];
+    const provider: TextToSpeechProvider = {
+      kind: "stdout_fallback",
+      async speak(text) {
+        spoken.push(text);
+
+        return {
+          provider: "stdout_fallback",
+          text,
+          rawAudioStoredByStreetSpeak: false
+        };
+      }
+    };
+    const client: RobinhoodMcpReadOnlyClient = {
+      async callTool(toolName: RobinhoodMcpReadOnlyToolName) {
+        switch (toolName) {
+          case "get_accounts":
+            return {
+              accounts: [
+                {
+                  account_id: "acct-raw-123",
+                  token: "secret-token"
+                }
+              ]
+            };
+          case "get_portfolio":
+            return {
+              portfolio: {
+                buying_power: 9999,
+                positions: [{ symbol: "HOOD", market_value: 112.4 }]
+              }
+            };
+          case "get_equity_positions":
+            return {
+              positions: [{ symbol: "HOOD", quantity: 5 }]
+            };
+          case "get_equity_quotes":
+            return {
+              quotes: [{ symbol: "HOOD", last_price: 22.48 }]
+            };
+          case "get_equity_orders":
+            return {
+              orders: [{ order_id: "order-raw-789" }]
+            };
+          case "get_equity_tradability":
+            return {
+              result: { symbol: "HOOD", tradable: true }
+            };
+          case "search":
+            return {
+              results: [{ symbol: "HOOD" }]
+            };
+        }
+      }
+    };
+
+    const result = await runStreetSpeakCli(["session", "--speak"], {
+      interactiveInput: ["smoke", "exit"],
+      robinhoodMcpClient: client,
+      textToSpeechProvider: provider
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(spoken).toHaveLength(1);
+    expect(spoken[0]).toBe(
+      "Robinhood read-only smoke status is ready. Raw MCP output was not spoken."
+    );
+    expect(spoken[0]).not.toContain("acct-raw-123");
+    expect(spoken[0]).not.toContain("secret-token");
+    expect(spoken[0]).not.toContain("9999");
+    expect(spoken[0]).not.toContain("112.4");
+    expect(spoken[0]).not.toContain("22.48");
+    expect(spoken[0]).not.toContain("order-raw-789");
+  });
+
+  it("speaks only a safe summary for interactive handoff output", async () => {
+    const spoken: string[] = [];
+    const provider: TextToSpeechProvider = {
+      kind: "stdout_fallback",
+      async speak(text) {
+        spoken.push(text);
+
+        return {
+          provider: "stdout_fallback",
+          text,
+          rawAudioStoredByStreetSpeak: false
+        };
+      }
+    };
+
+    const result = await runStreetSpeakCli(["session", "--speak"], {
+      interactiveInput: ["buy 5 HOOD", "handoff", "exit"],
+      challengeCode: "4827",
+      textToSpeechProvider: provider
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Build or review a long equity order");
+    expect(spoken).toHaveLength(2);
+    expect(spoken[0]).toBe(
+      "Mock ticket created. Exact confirmation is required before mock submission. No live broker order was placed."
+    );
+    expect(spoken[1]).toBe(
+      "Handoff prompt is ready. StreetSpeak did not send, review, place, or cancel an order."
+    );
+    expect(spoken[1]).not.toContain("Build or review");
+    expect(spoken[1]).not.toContain("buy 5 shares of HOOD");
   });
 
   it("does not expose top-level live trading commands", async () => {
