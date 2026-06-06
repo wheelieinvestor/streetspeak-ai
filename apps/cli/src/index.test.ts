@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildMacOsSayCommand,
@@ -26,9 +29,7 @@ describe("StreetSpeak CLI", () => {
     expect(result.exitCode).toBe(0);
     expect(chunks.join("")).toBe(result.stdout);
     expect(result.stdout).toContain("StreetSpeak AI");
-    expect(result.stdout).toContain(
-      "Voice-native trading desk for AI agents"
-    );
+    expect(result.stdout).toContain("Voice-native trading desk for AI agents");
     expect(result.stdout).toContain("Mock trading desk: available");
     expect(result.stdout).toContain(
       "Robinhood read-only: unavailable/unconfigured by default"
@@ -51,6 +52,10 @@ describe("StreetSpeak CLI", () => {
     expect(result.stdout).toContain("Session commands:");
     expect(result.stdout).toContain("show my portfolio");
     expect(result.stdout).toContain("confirm <exact phrase>");
+    expect(result.stdout).toContain(
+      "Generic confirmations like yes are rejected."
+    );
+    expect(result.stdout).toContain("manual Robinhood Agent prompt");
   });
 
   it("prints product and safety status", async () => {
@@ -90,9 +95,7 @@ describe("StreetSpeak CLI", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("HOOD mock static quote");
-    expect(result.stdout).toContain(
-      "MOCK STATIC QUOTE - not real market data"
-    );
+    expect(result.stdout).toContain("MOCK STATIC QUOTE - not real market data");
     expect(result.stdout).toContain("source: mock/static data only");
   });
 
@@ -123,7 +126,7 @@ describe("StreetSpeak CLI", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("status: awaiting_confirmation");
     expect(result.stdout).toContain(
-      "Mock ticket only. No live broker order placed."
+      "Mock ticket only. No live broker order was placed."
     );
     expect(result.stdout).toContain("ticket: BUY 5 HOOD MARKET DAY");
     expect(result.stdout).toContain("live trading enabled: false");
@@ -131,6 +134,137 @@ describe("StreetSpeak CLI", () => {
     expect(result.stdout).toContain("This is not investment advice.");
     expect(result.stdout).toContain(
       "Actual Robinhood trade approval happens outside StreetSpeak for now."
+    );
+  });
+
+  it("routes one-off text transcripts through the mock-only voice command path", async () => {
+    const result = await runStreetSpeakCli(["transcript", "buy 5 HOOD"], {
+      now: FIXED_NOW,
+      challengeCode: "4827"
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Voice Transcript Bridge");
+    expect(result.stdout).toContain("Input source: text transcript.");
+    expect(result.stdout).toContain("Command source: voice.");
+    expect(result.stdout).toContain("Mock Ticket");
+    expect(result.stdout).toContain("Symbol: HOOD");
+    expect(result.stdout).toContain("Exact Confirmation Required");
+    expect(result.stdout).toContain("CONFIRM MOCK BUY 5 HOOD MARKET CODE 4827");
+    expect(result.stdout).toContain(
+      "Generic confirmations like yes, do it, or confirmed are rejected."
+    );
+    expect(result.stdout).toContain(
+      "StreetSpeak stores no transcript copy and no raw audio."
+    );
+    expect(result.stdout).toContain("No live broker order was placed.");
+  });
+
+  it("supports --speak on one-off transcript commands without raw audio storage", async () => {
+    const spoken: string[] = [];
+    const provider: TextToSpeechProvider = {
+      kind: "stdout_fallback",
+      async speak(text) {
+        spoken.push(text);
+
+        return {
+          provider: "stdout_fallback",
+          text,
+          rawAudioStoredByStreetSpeak: false
+        };
+      }
+    };
+
+    const result = await runStreetSpeakCli(
+      ["transcript", "--speak", "show my portfolio"],
+      {
+        now: FIXED_NOW,
+        textToSpeechProvider: provider
+      }
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(spoken).toHaveLength(1);
+    expect(spoken[0]).toContain("Voice Transcript Bridge");
+    expect(spoken[0]).toContain("$12,500.00 mock buying power");
+    expect(result.stdout).toContain(
+      "StreetSpeak TTS: stdout fallback used. No raw audio stored."
+    );
+  });
+
+  it("feeds transcript files into the same mock-only interactive session path", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "streetspeak-cli-"));
+    const transcriptPath = path.join(directory, "transcript.txt");
+
+    try {
+      await writeFile(
+        transcriptPath,
+        [
+          "buy 5 HOOD",
+          "yes",
+          "confirm CONFIRM MOCK BUY 5 HOOD MARKET CODE 4827",
+          "receipt"
+        ].join("\n"),
+        "utf8"
+      );
+
+      const result = await runStreetSpeakCli(
+        ["session", "--transcript-file", transcriptPath],
+        {
+          now: FIXED_NOW,
+          challengeCode: "4827"
+        }
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("Transcript File Bridge");
+      expect(result.stdout).toContain("Loaded 4 text transcript lines.");
+      expect(result.stdout).toContain(
+        "Every line routes through the same mock-only session command handler."
+      );
+      expect(result.stdout).toContain("Confirmation Rejected");
+      expect(result.stdout).toContain("Reason: generic_confirmation");
+      expect(result.stdout).toContain("Mock Submission Complete");
+      expect(result.stdout).toContain("Receipt");
+      expect(result.stdout).toContain("Copy/paste safe receipt");
+      expect(result.stdout).toContain("Raw audio stored: false");
+      expect(result.stdout).toContain("No live broker order was placed.");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when transcript file input is missing or unreadable", async () => {
+    const missingPath = path.join(
+      tmpdir(),
+      "streetspeak-missing-transcript.txt"
+    );
+
+    const missingArg = await runStreetSpeakCli([
+      "session",
+      "--transcript-file"
+    ]);
+    const unreadable = await runStreetSpeakCli([
+      "session",
+      "--transcript-file",
+      missingPath
+    ]);
+    const wrongCommand = await runStreetSpeakCli([
+      "transcript",
+      "--transcript-file",
+      missingPath,
+      "buy 5 HOOD"
+    ]);
+
+    expect(missingArg.exitCode).toBe(1);
+    expect(missingArg.stderr).toContain(
+      "Provide a transcript file path after --transcript-file"
+    );
+    expect(unreadable.exitCode).toBe(1);
+    expect(unreadable.stderr).toContain("Unable to read transcript file");
+    expect(wrongCommand.exitCode).toBe(1);
+    expect(wrongCommand.stderr).toContain(
+      "Use --transcript-file with the session command only"
     );
   });
 
@@ -165,6 +299,7 @@ describe("StreetSpeak CLI", () => {
       expect(result.stdout).toContain("Mock Submission Complete");
       expect(result.stdout).toContain("Receipt");
       expect(result.stdout).toContain("Mock Only / No Live Trading");
+      expect(result.stdout).toContain("Copy/paste safe receipt");
       expect(result.stdout).toContain("No live broker order was placed.");
     }
   );
@@ -207,8 +342,10 @@ describe("StreetSpeak CLI", () => {
     ]);
 
     expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Robinhood Agent Manual Handoff");
+    expect(result.stdout).toContain("Copy/paste prompt:");
     expect(result.stdout).toContain(
-      "Ask your Robinhood Agent: Build or review a long equity order to buy 5 shares of HOOD."
+      "Build or review a long equity order to buy 5 shares of HOOD."
     );
     expect(result.stdout).toContain(
       "Do not place the order unless I separately confirm inside the Robinhood Agent flow."
@@ -216,6 +353,10 @@ describe("StreetSpeak CLI", () => {
     expect(result.stdout).toContain(
       "StreetSpeak did not send this to Robinhood, did not review the order, and did not place an order."
     );
+    expect(result.stdout).toContain(
+      "StreetSpeak CLI has no Robinhood order review, order placement, cancel order, or live execution command."
+    );
+    expect(result.stdout).toContain("No live broker order was placed.");
     expect(result.stdout).toContain("This is not investment advice.");
   });
 
@@ -233,6 +374,9 @@ describe("StreetSpeak CLI", () => {
     );
     expect(result.stdout).toContain("StreetSpeak did not review the order.");
     expect(result.stdout).toContain("StreetSpeak did not place an order.");
+    expect(result.stdout).toContain(
+      "Do not place anything unless separately confirmed inside Robinhood Agent."
+    );
     expect(result.stdout).toContain("Robinhood Smoke Status");
     expect(result.stdout).toContain("status: unavailable");
     expect(result.stdout).toContain("raw payload included: false");
@@ -261,13 +405,28 @@ describe("StreetSpeak CLI", () => {
     expect(handoff.message).toContain("Options handoff is unsupported/future");
   });
 
+  it("keeps options handoff unsupported through the CLI command", async () => {
+    const result = await runStreetSpeakCli([
+      "robinhood",
+      "handoff",
+      "buy 1 HOOD call"
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Options handoff is unsupported/future");
+    expect(result.stdout).toContain("No live broker order was placed.");
+    expect(result.stdout).toContain(
+      "No Robinhood order review, order placement, cancel order, or live execution command exists"
+    );
+  });
+
   it("keeps no-live-execution wording on mock order output", async () => {
     const result = await runStreetSpeakCli(["demo", "buy 5 HOOD"], {
       now: FIXED_NOW,
       challengeCode: "1234"
     });
 
-    expect(result.stdout).toContain("No live broker order placed.");
+    expect(result.stdout).toContain("No live broker order was placed.");
     expect(result.stdout).toContain(
       "StreetSpeak CLI does not review, place, or cancel Robinhood orders."
     );
@@ -332,19 +491,46 @@ describe("StreetSpeak CLI", () => {
     };
 
     const result = await runStreetSpeakCli([], {
-      interactiveInput: [
-        "speak on",
-        "status",
-        "speak off",
-        "status",
-        "exit"
-      ],
+      interactiveInput: ["speak on", "status", "speak off", "status", "exit"],
       textToSpeechProvider: provider
     });
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("Speak-back is on for future responses.");
     expect(result.stdout).toContain("Speak-back is off.");
+    expect(result.stdout).toContain(
+      "StreetSpeak TTS: stdout fallback used. No raw audio stored."
+    );
+    expect(spoken).toHaveLength(1);
+    expect(spoken[0]).toContain("Mock trading desk: available");
+  });
+
+  it("starts session --speak with speak-back enabled for the session only", async () => {
+    const spoken: string[] = [];
+    const provider: TextToSpeechProvider = {
+      kind: "stdout_fallback",
+      async speak(text) {
+        spoken.push(text);
+
+        return {
+          provider: "stdout_fallback",
+          text,
+          rawAudioStoredByStreetSpeak: false
+        };
+      }
+    };
+
+    const result = await runStreetSpeakCli(["session", "--speak"], {
+      interactiveInput: ["status", "speak off", "status", "exit"],
+      textToSpeechProvider: provider
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Speak-back is on for this session.");
+    expect(result.stdout).toContain("Speak-back is off.");
+    expect(result.stdout).toContain(
+      "Preferences are per-session only; no config file was written."
+    );
     expect(result.stdout).toContain(
       "StreetSpeak TTS: stdout fallback used. No raw audio stored."
     );

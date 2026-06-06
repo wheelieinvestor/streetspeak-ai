@@ -13,8 +13,10 @@ For quick local development, run the TypeScript source directly through the dev 
 
 ```sh
 pnpm streetspeak:dev
-pnpm streetspeak:dev session
+pnpm streetspeak:dev session --speak
+pnpm streetspeak:dev session --transcript-file ./transcript.txt
 pnpm streetspeak:dev status
+pnpm streetspeak:dev transcript "buy 5 HOOD"
 pnpm streetspeak:dev demo "buy 5 HOOD"
 pnpm streetspeak:dev robinhood handoff "buy 5 HOOD"
 pnpm streetspeak:dev speak "StreetSpeak AI is ready."
@@ -27,8 +29,10 @@ For built usage, run the production path:
 ```sh
 pnpm build
 pnpm streetspeak
-pnpm streetspeak session
+pnpm streetspeak session --speak
+pnpm streetspeak session --transcript-file ./transcript.txt
 pnpm streetspeak status
+pnpm streetspeak transcript "buy 5 HOOD"
 ```
 
 After `pnpm build`, the CLI package also exposes a `streetspeak` bin from `apps/cli`.
@@ -67,7 +71,7 @@ clear
 exit
 ```
 
-Session state is in memory only. The CLI remembers the latest transcript, parsed mock intent, mock ticket, safety review, exact confirmation challenge, mock confirmation result, mock broker response, receipt, and local speak-back setting only until the process exits. It does not persist session state, raw audio, broker credentials, real account data, raw MCP output, or live orders.
+Session state is in memory only. The CLI remembers the latest transcript, parsed mock intent, mock ticket, safety review, exact confirmation challenge, mock confirmation result, mock broker response, receipt, and local speak-back setting only until the process exits. It does not persist session state, raw audio, broker credentials, real account data, raw MCP output, or live orders. Speak-back and other CLI preferences are per-session only; there is no persistent CLI config file.
 
 `buy 5 HOOD` creates a mock ticket and exact confirmation challenge only. `yes` is rejected as a generic confirmation. To complete a mock submission, type:
 
@@ -76,6 +80,15 @@ confirm CONFIRM MOCK BUY 5 HOOD MARKET CODE <code>
 ```
 
 Use the exact phrase/code printed in your terminal. The result is a mock receipt only, and every receipt states `No live broker order was placed.`
+
+After a mock submission, run:
+
+```text
+receipt
+handoff
+```
+
+`receipt` prints a copy-friendly mock-only receipt. It does not include broker credentials, account IDs, raw MCP output, raw audio, or real account data. `handoff` prints a manual Robinhood Agent prompt for the latest mock equity ticket.
 
 ## Status
 
@@ -135,6 +148,32 @@ pnpm streetspeak demo "show my portfolio" --speak
 
 On macOS, the CLI uses the local `say` command. On other platforms, it falls back to stdout. StreetSpeak does not use ElevenLabs, API keys, external TTS services, or raw audio storage.
 
+`session --speak` starts the interactive session with speak-back enabled. Inside a session, `speak on` and `speak off` toggle only the current process.
+
+## Text Transcript Bridge
+
+The CLI voice bridge accepts text transcripts, not raw audio:
+
+```sh
+pnpm streetspeak:dev transcript "buy 5 HOOD"
+pnpm streetspeak:dev transcript "buy 5 HOOD" --speak
+pnpm streetspeak:dev session --transcript-file ./transcript.txt
+```
+
+Built path after `pnpm build`:
+
+```sh
+pnpm streetspeak transcript "buy 5 HOOD"
+pnpm streetspeak transcript "buy 5 HOOD" --speak
+pnpm streetspeak session --transcript-file ./transcript.txt
+```
+
+Use macOS Dictation, Wispr Flow, or another local dictation tool to enter text into the terminal. You can paste the dictated text into an interactive session, pass it as a `transcript` argument, or write a short local `transcript.txt` file and feed it to `session --transcript-file`.
+
+Transcript input routes through the same mock-only command handling as typed input. It can build mock tickets, require the exact mock confirmation phrase/code, reject generic confirmations like `yes`, print a mock receipt, and produce a manual Robinhood Agent handoff. It does not create live broker orders.
+
+StreetSpeak does not bundle Whisper, `whisper.cpp`, or any speech-to-text model. It does not require voice API keys, upload audio to a StreetSpeak server, store raw audio, or persist transcript copies by default. Do not paste secrets, account IDs, tokens, MCP URLs, auth config, raw MCP output, raw audio paths, or real account data into transcript commands, docs, screenshots, PRs, or handoffs.
+
 ## Robinhood Read-Only Smoke
 
 ```sh
@@ -155,8 +194,10 @@ pnpm streetspeak robinhood handoff "buy 5 HOOD"
 
 The CLI prints a manual prompt for Dean's connected Robinhood Agent. StreetSpeak does not send the prompt to Robinhood, does not review the order, and does not place an order. Any quote lookup, cost estimate, buying-power impact, warning review, and trade approval must happen inside the separate Robinhood Agent flow.
 
+The handoff output is copy-friendly and sectioned. It says the prompt is manual only, tells Robinhood Agent not to place anything unless separately confirmed inside that Agent flow, and repeats that StreetSpeak did not send, review, place, or cancel an order. Actual trade review and approval happen only inside Robinhood Agent, not inside StreetSpeak.
+
 Options handoff is unsupported/future. Live trading, order review, order placement, cancel order, autonomous trading, broker login UI, analytics, payments, Discord/X automation, and trade recommendations are not CLI features.
 
 ## Voice Input
 
-Typed CLI input is primary. The CLI can accept pasted transcripts from any local dictation tool. Browser-native voice remains in the web app. Future local Whisper or `whisper.cpp` support can be evaluated later, but this CLI adds no speech-to-text dependency, model, or external voice service.
+Typed CLI input is primary. The CLI can accept pasted text transcripts from any local dictation tool. Browser-native voice remains in the web app. Future local speech-to-text support can be evaluated later, but this CLI adds no speech-to-text dependency, model, external voice service, API key, sample audio, or StreetSpeak server upload path.
