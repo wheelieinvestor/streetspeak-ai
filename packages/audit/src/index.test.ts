@@ -150,6 +150,44 @@ describe("audit events", () => {
     });
   });
 
+  it("supports redacted execution lifecycle events", () => {
+    const event = createAuditEvent(
+      "execution.live.blocked",
+      {
+        planId: "plan-1",
+        ticketId: "ticket-1",
+        accountId: "acct-id",
+        brokerOrderId: "broker-order-id",
+        mcpUrl: "https://mcp.example.test",
+        authConfig: { token: "placeholder" },
+        rawMcpOutput: { account_number: "raw-account" },
+        liveExecutionAvailable: false
+      },
+      {
+        id: "audit-execution-1",
+        now: new Date("2026-01-01T00:00:00.000Z")
+      }
+    );
+
+    expect(event).toEqual({
+      id: "audit-execution-1",
+      type: "execution.live.blocked",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      actor: "system",
+      redacted: true,
+      payload: {
+        planId: "plan-1",
+        ticketId: "ticket-1",
+        accountId: "[REDACTED]",
+        brokerOrderId: "[REDACTED]",
+        mcpUrl: "[REDACTED]",
+        authConfig: "[REDACTED]",
+        rawMcpOutput: "[REDACTED]",
+        liveExecutionAvailable: false
+      }
+    });
+  });
+
   it("keeps local in-memory audit timelines append-only for the demo flow", async () => {
     const sink = new InMemoryAuditSink();
 

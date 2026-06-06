@@ -38,6 +38,7 @@ StreetSpeak AI v0.1 is a local mock trading desk demo. It can:
 - Show the `Real Robinhood MCP Read-Only Connection` panel for externally managed MCP clients. The default state is unavailable/unconfigured unless the host page provides a read-only client at runtime.
 - Expose Robinhood read-only adapter contracts for fixture data and externally managed MCP read-only data. Neither path includes order review, order placement, cancel order, or live execution.
 - Provide a local CLI for mock commands, safe speak-back, redacted read-only smoke checks, and manual Robinhood Agent handoff prompts. The CLI does not place real trades.
+- Provide execution-readiness CLI commands for safe planning, dry-run submission records, manual handoff prompts, and blocked-live status. These commands do not review, place, execute, or cancel broker orders.
 - Support CLI-local TTS through stdout fallback, local macOS `say`, and optional BYO ElevenLabs for speak-back only.
 - Accept text transcripts from local dictation tools in the CLI and route them through the same mock-only command path. The CLI does not record, upload, or store raw audio.
 
@@ -49,6 +50,7 @@ StreetSpeak AI v0.1 current status:
 - Robinhood fixture explorer: working with committed static fixture data only.
 - Robinhood read-only MCP boundary: scaffolded and unavailable by default unless externally configured at runtime.
 - Redacted Robinhood read-only smoke harness: added; the safe default run should report unavailable/unconfigured.
+- Execution readiness infrastructure: added for plan, dry-run, manual handoff, and blocked-live lifecycle states only.
 - Real Robinhood verified read-only: not claimed unless a redacted smoke test is actually run with an external client.
 - Robinhood order review: not implemented.
 - Live execution: not implemented and unavailable.
@@ -102,6 +104,10 @@ pnpm streetspeak:dev session --transcript-file ./transcript.txt
 pnpm streetspeak:dev status
 pnpm streetspeak:dev transcript "buy 5 HOOD"
 pnpm streetspeak:dev demo "buy 5 HOOD"
+pnpm streetspeak:dev execute status
+pnpm streetspeak:dev execute plan "buy 5 HOOD"
+pnpm streetspeak:dev execute dry-run "buy 5 HOOD"
+pnpm streetspeak:dev execute handoff "buy 5 HOOD"
 pnpm streetspeak:dev robinhood handoff "buy 5 HOOD"
 pnpm streetspeak:dev speak "StreetSpeak AI is ready."
 pnpm streetspeak:dev speak "StreetSpeak AI is ready." --voice Samantha
@@ -120,6 +126,10 @@ pnpm streetspeak session --transcript-file ./transcript.txt
 pnpm streetspeak status
 pnpm streetspeak transcript "buy 5 HOOD"
 pnpm streetspeak demo "buy 5 HOOD"
+pnpm streetspeak execute status
+pnpm streetspeak execute plan "buy 5 HOOD"
+pnpm streetspeak execute dry-run "buy 5 HOOD"
+pnpm streetspeak execute handoff "buy 5 HOOD"
 pnpm streetspeak robinhood handoff "buy 5 HOOD"
 ```
 
@@ -133,7 +143,9 @@ For tomorrow's terminal dictation workflow, use macOS Dictation, Wispr Flow, or 
 
 StreetSpeak CLI does not place real trades, review Robinhood orders, place orders, cancel orders, store broker secrets, print raw MCP output, or provide investment advice. Robinhood Agent handoff is manual only: paste the prompt into the separate connected Robinhood Agent flow if you choose to continue there. Do not place anything unless separately confirmed inside Robinhood Agent. Actual quote lookup, order review, approval, and any real broker action happen outside StreetSpeak. Interactive session state is in memory only and is cleared when the process exits.
 
-See [docs/cli-quickstart.md](docs/cli-quickstart.md), [docs/tomorrow-safe-use.md](docs/tomorrow-safe-use.md), [docs/elevenlabs-tts.md](docs/elevenlabs-tts.md), and [docs/voice-provider-roadmap.md](docs/voice-provider-roadmap.md) for CLI usage, TTS setup, and safety boundaries.
+Execution-readiness commands are also safe-only: `execute plan` creates an inspectable plan and safety gates, `execute dry-run` records a dry-run submission only, `execute handoff` creates a manual prompt only, and `execute status` reports live execution unavailable, order review unavailable, cancel unavailable, and kill switch active. `execute live`, `execute place`, `execute review`, and `execute cancel` fail closed.
+
+See [docs/cli-quickstart.md](docs/cli-quickstart.md), [docs/execution-readiness.md](docs/execution-readiness.md), [docs/safety-model.md](docs/safety-model.md), [docs/tomorrow-safe-use.md](docs/tomorrow-safe-use.md), [docs/elevenlabs-tts.md](docs/elevenlabs-tts.md), and [docs/voice-provider-roadmap.md](docs/voice-provider-roadmap.md) for CLI usage, execution readiness, TTS setup, and safety boundaries.
 
 ## Browser Voice Input
 

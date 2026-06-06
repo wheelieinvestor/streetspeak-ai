@@ -14,6 +14,7 @@
     "@streetspeak-ai/audit": "workspace:*",
     "@streetspeak-ai/brokers": "workspace:*",
     "@streetspeak-ai/core": "workspace:*",
+    "@streetspeak-ai/execution": "workspace:*",
     "@streetspeak-ai/voice": "workspace:*"
   },
   "devDependencies": {}
