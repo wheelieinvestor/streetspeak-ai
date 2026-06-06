@@ -13,6 +13,7 @@ import {
   type CommandSource,
   type MockTradingDeskState
 } from "@streetspeak-ai/core";
+import { createExecutionReadinessStatus } from "@streetspeak-ai/execution";
 import type { BrowserSpeechHost } from "@streetspeak-ai/voice";
 import {
   BrowserVoiceController,
@@ -530,6 +531,7 @@ function createMarkup(options: MarkupOptions): string {
           <div class="nav-links">
             <a href="#command-center">Command</a>
             <a href="#mock-desk">Desk</a>
+            <a href="#execution-readiness">Execution</a>
             <a href="#robinhood-boundary">Robinhood</a>
             <a href="#local-exports">Exports</a>
           </div>
@@ -717,6 +719,7 @@ function createMarkup(options: MarkupOptions): string {
 
       <div class="supporting-panels" aria-label="demo settings and safety summary">
         ${renderSettings(settings, storageAvailable)}
+        ${renderExecutionReadinessPanel()}
         ${renderV01MockDemoStatus()}
       </div>
 
@@ -802,6 +805,35 @@ function renderSettings(
           <button id="reset-onboarding-acknowledgement" type="button" class="secondary-button">Reset onboarding</button>
         </div>
       </div>
+    </section>
+  `;
+}
+
+function renderExecutionReadinessPanel(): string {
+  const status = createExecutionReadinessStatus();
+
+  return `
+    <section id="execution-readiness" class="status-panel execution-readiness-panel" aria-label="execution readiness">
+      <div class="panel-heading">
+        <h2>Execution Readiness</h2>
+        <span class="badge badge-danger">Live blocked</span>
+      </div>
+      <p class="status-copy">Execution infrastructure is available for planning, dry-runs, and manual handoff only. Broker review, live placement, and cancel actions are unavailable and future-gated.</p>
+      <dl class="status-grid execution-status-grid">
+        <div><dt>Live execution</dt><dd>${status.liveExecutionAvailable ? "available" : "unavailable"}</dd><small>${escapeHtml(status.message)}</small></div>
+        <div><dt>Order review</dt><dd>${status.orderReviewAvailable ? "available" : "unavailable"}</dd><small>Future broker-review gate required.</small></div>
+        <div><dt>Cancel order</dt><dd>${status.cancelOrderAvailable ? "available" : "unavailable"}</dd><small>No cancel-order command or broker method exists.</small></div>
+        <div><dt>Dry-run</dt><dd>${status.dryRunAvailable ? "available" : "unavailable"}</dd><small>Records simulated submission only.</small></div>
+        <div><dt>Manual handoff</dt><dd>${status.manualHandoffAvailable ? "available" : "unavailable"}</dd><small>Copy/paste prompt only; nothing is sent to Robinhood.</small></div>
+        <div><dt>Kill switch</dt><dd>${status.killSwitchActive ? "active" : "inactive"}</dd><small>Emergency disable blocks live execution.</small></div>
+        <div><dt>Confirmation</dt><dd>${status.exactConfirmationRequired ? "exact phrase/code" : "not required"}</dd><small>Generic confirmations remain rejected.</small></div>
+        <div><dt>Broker execution</dt><dd>${status.brokerExecutionFutureGated ? "future-gated" : "available"}</dd><small>No live broker execution path is present.</small></div>
+      </dl>
+      <ul class="education-list execution-readiness-list">
+        <li>No buy, sell, place, review, cancel, or live execution controls are exposed in this panel.</li>
+        <li>Dry-run and manual handoff do not call Robinhood order review or order placement tools.</li>
+        <li>StreetSpeak AI is a self-directed utility and does not recommend trades.</li>
+      </ul>
     </section>
   `;
 }

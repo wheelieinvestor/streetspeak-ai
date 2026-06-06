@@ -18,6 +18,10 @@ pnpm streetspeak:dev session --transcript-file ./transcript.txt
 pnpm streetspeak:dev status
 pnpm streetspeak:dev transcript "buy 5 HOOD"
 pnpm streetspeak:dev demo "buy 5 HOOD"
+pnpm streetspeak:dev execute status
+pnpm streetspeak:dev execute plan "buy 5 HOOD"
+pnpm streetspeak:dev execute dry-run "buy 5 HOOD"
+pnpm streetspeak:dev execute handoff "buy 5 HOOD"
 pnpm streetspeak:dev robinhood handoff "buy 5 HOOD"
 pnpm streetspeak:dev speak "StreetSpeak AI is ready."
 pnpm streetspeak:dev speak "StreetSpeak AI is ready." --voice Samantha
@@ -36,11 +40,32 @@ pnpm streetspeak session --speak
 pnpm streetspeak session --transcript-file ./transcript.txt
 pnpm streetspeak status
 pnpm streetspeak transcript "buy 5 HOOD"
+pnpm streetspeak execute status
+pnpm streetspeak execute plan "buy 5 HOOD"
+pnpm streetspeak execute dry-run "buy 5 HOOD"
+pnpm streetspeak execute handoff "buy 5 HOOD"
 ```
 
 After `pnpm build`, the CLI package also exposes a `streetspeak` bin from `apps/cli`.
 
 StreetSpeak CLI does not place real trades. Robinhood Agent handoff is manual only.
+
+## Execution Readiness Commands
+
+The execution commands are infrastructure-only. They do not review, place, execute, or cancel broker orders.
+
+```sh
+pnpm streetspeak:dev execute status
+pnpm streetspeak:dev execute plan "buy 5 HOOD"
+pnpm streetspeak:dev execute dry-run "buy 5 HOOD"
+pnpm streetspeak:dev execute handoff "buy 5 HOOD"
+```
+
+`execute status` shows live execution unavailable, order review unavailable, cancel unavailable, dry-run available, manual handoff available, kill switch active, and exact confirmation required.
+
+`execute plan` creates a future-ready execution plan, prints safety gates, and creates an exact confirmation phrase/code. `execute dry-run` records a dry-run only and states that no live broker order was placed. `execute handoff` creates a manual Robinhood Agent prompt only.
+
+Forbidden commands such as `execute live`, `execute place`, `execute review`, and `execute cancel` fail safely with `Live execution is unavailable in this build.`
 
 ## Interactive Session
 
@@ -129,6 +154,9 @@ pnpm streetspeak demo "show my portfolio"
 pnpm streetspeak demo "what is HOOD trading at"
 pnpm streetspeak demo "buy 5 HOOD"
 pnpm streetspeak demo "buy $500 of HOOD"
+pnpm streetspeak execute plan "buy 5 HOOD"
+pnpm streetspeak execute dry-run "buy 5 HOOD"
+pnpm streetspeak execute handoff "buy 5 HOOD"
 ```
 
 `buy 5 HOOD` builds a mock ticket only. It prints a safety review and an exact mock confirmation phrase/code, but no live broker order is placed. Actual Robinhood trade approval happens outside StreetSpeak for now.

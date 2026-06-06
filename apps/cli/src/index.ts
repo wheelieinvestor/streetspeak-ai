@@ -18,6 +18,18 @@ import {
   runRobinhoodMcpReadOnlySmokeTest,
   type RobinhoodMcpReadOnlyClient
 } from "@streetspeak-ai/brokers";
+import {
+  BlockedLiveExecutionGateway,
+  DryRunExecutionGateway,
+  LIVE_EXECUTION_UNAVAILABLE_MESSAGE,
+  ManualHandoffExecutionGateway,
+  createExecutionReadinessStatus,
+  type ExecutionDryRunResult,
+  type ExecutionGateway,
+  type ExecutionGatewayResult,
+  type ExecutionManualHandoff,
+  type ExecutionPlan
+} from "@streetspeak-ai/execution";
 
 export interface CliRunResult {
   readonly exitCode: number;
@@ -125,6 +137,11 @@ const STATUS_LINES = [
   "order review: unavailable",
   "order placement: unavailable",
   "cancel order: unavailable",
+  "execution dry-run: available",
+  "execution manual handoff: available",
+  "execution kill switch: active",
+  "execution exact confirmation required: true",
+  "broker execution future-gated: true",
   "credentials stored by StreetSpeak: false",
   "raw MCP output printed: false",
   "investment advice/trade recommendations: unavailable"
@@ -142,6 +159,10 @@ const HELP_LINES = [
   '  streetspeak demo "show my portfolio"',
   '  streetspeak demo "what is HOOD trading at"',
   '  streetspeak demo "buy 5 HOOD" [--speak]',
+  '  streetspeak execute plan "buy 5 HOOD"',
+  '  streetspeak execute dry-run "buy 5 HOOD"',
+  '  streetspeak execute handoff "buy 5 HOOD"',
+  "  streetspeak execute status",
   "  streetspeak robinhood smoke",
   '  streetspeak robinhood handoff "buy 5 HOOD"',
   '  streetspeak speak "text" [--voice Samantha] [--provider elevenlabs]',
@@ -283,6 +304,10 @@ export async function runStreetSpeakCli(
 
   if (command === "robinhood") {
     return runRobinhoodCommand(rest, runtime);
+  }
+
+  if (command === "execute") {
+    return runExecuteCommand(rest, runtime);
   }
 
   if (command === "speak") {
@@ -661,6 +686,11 @@ function renderStatusCard(useColor: boolean): readonly string[] {
       "Order review: unavailable",
       "Order placement: unavailable",
       "Cancel order: unavailable",
+      "Execution dry-run: available",
+      "Execution manual handoff: available",
+      "Execution kill switch: active",
+      "Execution exact confirmation required: true",
+      "Broker execution future-gated: true",
       "Credentials stored by StreetSpeak: false",
       "Raw MCP output printed: false",
       "Investment advice/trade recommendations: unavailable"
@@ -1342,19 +1372,23 @@ function buildSafeSpeakBackText(lines: readonly string[]): string {
   }
 
   if (
-    normalized.includes("mock ticket") ||
-    normalized.includes("awaiting_confirmation") ||
-    normalized.includes("exact confirmation required")
-  ) {
-    return "Mock ticket created. Exact confirmation is required before mock submission. No live broker order was placed.";
-  }
-
-  if (
     normalized.includes("portfolio summary") ||
     normalized.includes("mock portfolio") ||
     normalized.includes("mock buying power")
   ) {
     return "Mock portfolio summary is ready. Source is mock static data only. No live broker order was placed.";
+  }
+
+  if (normalized.includes("status")) {
+    return "StreetSpeak status is ready. Live trading, order review, order placement, and cancel order remain unavailable.";
+  }
+
+  if (
+    normalized.includes("mock ticket") ||
+    normalized.includes("awaiting_confirmation") ||
+    normalized.includes("exact confirmation required")
+  ) {
+    return "Mock ticket created. Exact confirmation is required before mock submission. No live broker order was placed.";
   }
 
   if (
@@ -1366,10 +1400,6 @@ function buildSafeSpeakBackText(lines: readonly string[]): string {
 
   if (normalized.includes("receipt")) {
     return "Mock receipt is ready. No live broker order was placed.";
-  }
-
-  if (normalized.includes("status")) {
-    return "StreetSpeak status is ready. Live trading, order review, order placement, and cancel order remain unavailable.";
   }
 
   if (normalized.includes("help")) {
@@ -1717,6 +1747,277 @@ async function runRobinhoodCommand(
   return error(
     "Unknown Robinhood command. Available Robinhood CLI commands: smoke, handoff. No order review, order placement, or cancel-order command exists."
   );
+}
+
+async function runExecuteCommand(
+  args: readonly string[],
+  runtime: StreetSpeakCliRuntime
+): Promise<CliRunResult> {
+  const [subcommand, ...rest] = args;
+
+  if (!subcommand || subcommand === "status") {
+    return ok(renderExecutionStatusLines());
+  }
+
+  if (["live", "place", "review", "cancel"].includes(subcommand)) {
+    const blockedGateway = new BlockedLiveExecutionGateway();
+    const blocked = blockedGateway.buildExecutionPlan({
+      transcript: rest.join(" ").trim(),
+      source: "cli",
+      ...(runtime.now === undefined ? {} : { now: runtime.now })
+    });
+    const message = blocked.ok
+      ? LIVE_EXECUTION_UNAVAILABLE_MESSAGE
+      : blocked.message;
+
+    return error(
+      [
+        message,
+        `Forbidden execute subcommand: ${subcommand}.`,
+        "No execute live, place, review, or cancel command is available.",
+        [
+          "No Robinhood review_equity_order, place_equity_order,",
+          "cancel_equity_order, review_option_order, place_option_order,",
+          "or cancel_option_order call was made."
+        ].join(" "),
+        "No live broker order was placed."
+      ].join("\n")
+    );
+  }
+
+  if (!["plan", "dry-run", "handoff"].includes(subcommand)) {
+    return error(
+      "Unknown execute command. Available execute commands: plan, dry-run, handoff, status. Live execution, order review, placement, and cancel remain unavailable."
+    );
+  }
+
+  const transcript = rest.join(" ").trim();
+
+  if (!transcript) {
+    return error(
+      `Provide a share-quantity equity command, such as: streetspeak execute ${subcommand} "buy 5 HOOD". No live broker order was placed.`
+    );
+  }
+
+  if (subcommand === "handoff") {
+    const gateway = createCliManualHandoffGateway(runtime);
+    const planResult = createCliExecutionPlan(gateway, transcript, runtime, {
+      includeChallenge: false
+    });
+
+    if (!planResult.ok) {
+      return error(formatExecutionFailure(planResult));
+    }
+
+    const handoff = gateway.createManualHandoff(planResult.value);
+
+    return handoff.ok
+      ? ok(renderExecutionHandoffOutput(handoff.value))
+      : error(formatExecutionFailure(handoff));
+  }
+
+  const gateway = createCliDryRunGateway(runtime);
+  const planResult = createCliExecutionPlan(gateway, transcript, runtime, {
+    includeChallenge: true
+  });
+
+  if (!planResult.ok) {
+    return error(formatExecutionFailure(planResult));
+  }
+
+  if (subcommand === "plan") {
+    return ok(renderExecutionPlanOutput(planResult.value));
+  }
+
+  const dryRun = gateway.submitDryRun(planResult.value);
+
+  return dryRun.ok
+    ? ok(renderExecutionDryRunOutput(dryRun.value))
+    : error(formatExecutionFailure(dryRun));
+}
+
+function createCliExecutionPlan(
+  gateway: ExecutionGateway,
+  transcript: string,
+  runtime: StreetSpeakCliRuntime,
+  options: { readonly includeChallenge: boolean }
+): ExecutionGatewayResult<ExecutionPlan> {
+  const built = gateway.buildExecutionPlan({
+    transcript,
+    source: "cli",
+    id: "cli-execution-plan",
+    ticketId: "cli-execution-ticket",
+    ...(runtime.now === undefined ? {} : { now: runtime.now })
+  });
+
+  if (!built.ok) {
+    return built;
+  }
+
+  const reviewed = gateway.runSafetyChecks(built.value);
+
+  if (!reviewed.ok || !options.includeChallenge) {
+    return reviewed;
+  }
+
+  return gateway.createConfirmationChallenge(reviewed.value, {
+    id: "cli-execution-challenge",
+    ...(runtime.challengeCode === undefined
+      ? {}
+      : { code: runtime.challengeCode }),
+    ...(runtime.now === undefined ? {} : { now: runtime.now })
+  });
+}
+
+function createCliDryRunGateway(
+  runtime: StreetSpeakCliRuntime
+): DryRunExecutionGateway {
+  return new DryRunExecutionGateway({
+    now: () => runtime.now ?? new Date(),
+    idFactory: (prefix) => `cli-${prefix}`
+  });
+}
+
+function createCliManualHandoffGateway(
+  runtime: StreetSpeakCliRuntime
+): ManualHandoffExecutionGateway {
+  return new ManualHandoffExecutionGateway({
+    now: () => runtime.now ?? new Date(),
+    idFactory: (prefix) => `cli-${prefix}`
+  });
+}
+
+function renderExecutionStatusLines(): readonly string[] {
+  const status = createExecutionReadinessStatus();
+
+  return [
+    "StreetSpeak execution status",
+    `live execution: ${status.liveExecutionAvailable ? "available" : "unavailable"}`,
+    `order review: ${status.orderReviewAvailable ? "available" : "unavailable"}`,
+    `order placement: ${
+      status.orderPlacementAvailable ? "available" : "unavailable"
+    }`,
+    `cancel order: ${status.cancelOrderAvailable ? "available" : "unavailable"}`,
+    `dry-run: ${status.dryRunAvailable ? "available" : "unavailable"}`,
+    `manual handoff: ${
+      status.manualHandoffAvailable ? "available" : "unavailable"
+    }`,
+    `kill switch: ${status.killSwitchActive ? "active" : "inactive"}`,
+    `exact confirmation required: ${status.exactConfirmationRequired}`,
+    `broker execution future-gated: ${status.brokerExecutionFutureGated}`,
+    `live mode opt-in available: ${status.liveModeOptInAvailable}`,
+    status.message,
+    "No live broker order was placed."
+  ];
+}
+
+function renderExecutionPlanOutput(plan: ExecutionPlan): readonly string[] {
+  return [
+    "========================================",
+    "Execution Plan",
+    "========================================",
+    `command: ${JSON.stringify(plan.transcript)}`,
+    `parse: ${plan.parse.kind}`,
+    `lifecycle: ${plan.lifecycle.join(" -> ")}`,
+    `ticket: ${formatExecutionTicket(plan)}`,
+    `live execution available: ${!plan.liveExecutionBlocked}`,
+    `order review available: ${plan.config.orderReviewEnabled}`,
+    `cancel order available: ${plan.config.cancelOrderEnabled}`,
+    `kill switch active: ${plan.config.killSwitchEnabled}`,
+    `exact confirmation required: ${plan.config.requireExactConfirmation}`,
+    `broker order reviewed: ${plan.brokerOrderReviewed}`,
+    `broker order placed: ${plan.brokerOrderPlaced}`,
+    `broker order canceled: ${plan.brokerOrderCanceled}`,
+    "Safety gates:",
+    ...plan.safetyGates.map(
+      (gate) => `- ${gate.id}: ${gate.status} - ${gate.message}`
+    ),
+    ...(plan.challenge
+      ? [
+          "Exact confirmation phrase/code:",
+          plan.challenge.requiredPhrase,
+          "Generic confirmations like yes, do it, or confirmed are rejected."
+        ]
+      : []),
+    "No live broker order was placed.",
+    "This is not investment advice.",
+    "========================================"
+  ];
+}
+
+function renderExecutionDryRunOutput(
+  result: ExecutionDryRunResult
+): readonly string[] {
+  return [
+    "========================================",
+    "Execution Dry Run",
+    "========================================",
+    `command: ${JSON.stringify(result.plan.transcript)}`,
+    `ticket: ${formatExecutionTicket(result.plan)}`,
+    `dry-run id: ${result.submission.id}`,
+    `dry-run status: ${result.submission.lifecycleState}`,
+    `live execution available: ${result.submission.liveExecutionAvailable}`,
+    `broker order reviewed: ${result.submission.brokerOrderReviewed}`,
+    `broker order placed: ${result.submission.brokerOrderPlaced}`,
+    `broker order canceled: ${result.submission.brokerOrderCanceled}`,
+    result.submission.message,
+    result.submission.statement,
+    "No Robinhood order review, order placement, cancel order, or live execution command was called.",
+    "This is not investment advice.",
+    "========================================"
+  ];
+}
+
+function renderExecutionHandoffOutput(
+  handoff: ExecutionManualHandoff
+): readonly string[] {
+  return [
+    "========================================",
+    "Execution Manual Handoff",
+    "========================================",
+    `command: ${JSON.stringify(handoff.plan.transcript)}`,
+    `ticket: ${formatExecutionTicket(handoff.plan)}`,
+    "Copy/paste prompt:",
+    "",
+    handoff.prompt,
+    "",
+    "Safety boundary:",
+    handoff.message,
+    `live execution available: ${handoff.liveExecutionAvailable}`,
+    `broker order reviewed: ${handoff.brokerOrderReviewed}`,
+    `broker order placed: ${handoff.brokerOrderPlaced}`,
+    `broker order canceled: ${handoff.brokerOrderCanceled}`,
+    handoff.statement,
+    "Do not place anything unless separately confirmed inside Robinhood Agent.",
+    "This is not investment advice.",
+    "========================================"
+  ];
+}
+
+function formatExecutionTicket(plan: ExecutionPlan): string {
+  const ticket = plan.ticket;
+
+  if (!ticket) {
+    return plan.parse.kind === "unsupported"
+      ? `unavailable (${plan.parse.reason})`
+      : "unavailable";
+  }
+
+  const limitClause =
+    ticket.limitPrice === undefined
+      ? ""
+      : ` @ ${formatMoney(ticket.limitPrice)}`;
+
+  return `${ticket.side.toUpperCase()} ${ticket.quantity} ${
+    ticket.symbol
+  } ${ticket.type.toUpperCase()}${limitClause} ${ticket.timeInForce.toUpperCase()}`;
+}
+
+function formatExecutionFailure(failure: {
+  readonly ok: false;
+  readonly message: string;
+}): string {
+  return `${failure.message}\nNo live broker order was placed.`;
 }
 
 function renderRobinhoodHandoffOutput(

@@ -8,7 +8,13 @@ export type AuditEventType =
   | "confirmation.rejected"
   | "mock.execution.requested"
   | "mock.execution.submitted"
-  | "robinhood.read_only.action";
+  | "robinhood.read_only.action"
+  | "execution.plan.created"
+  | "execution.safety.blocked"
+  | "execution.confirmation.required"
+  | "execution.dry_run.submitted"
+  | "execution.manual_handoff.created"
+  | "execution.live.blocked";
 
 export type AuditEventActor = "user" | "system" | "mock_broker";
 
@@ -109,7 +115,7 @@ export const NO_LIVE_BROKER_ORDER_PLACED_STATEMENT =
 
 const REDACTED = "[REDACTED]";
 const REDACTED_KEY_PATTERN =
-  /^(account|accountId|accountNumber|accountIdentifier|brokerAccountId|brokerAccountIdentifier|orderId|orderIds|brokerOrderId|brokerOrderIdentifier|rawOrderId|rawOrderIdentifier|portfolio|portfolioValue|portfolioValues|totalEquityValue|buyingPower|cashAvailable|holdings|positions|rawAudio|rawAudioBlob|audioData|accessToken|refreshToken|sessionToken|privateKey|authorization|password|secret|credential|token|api[_-]?key)$/i;
+  /^(account|accountId|accountNumber|accountIdentifier|brokerAccountId|brokerAccountIdentifier|orderId|orderIds|brokerOrderId|brokerOrderIdentifier|rawOrderId|rawOrderIdentifier|portfolio|portfolioValue|portfolioValues|totalEquityValue|buyingPower|cashAvailable|holdings|positions|rawMcpOutput|mcpRawOutput|mcpUrl|mcpURL|mcpEndpoint|authConfig|rawAudio|rawAudioBlob|audioData|accessToken|refreshToken|sessionToken|privateKey|authorization|password|secret|credential|credentials|token|api[_-]?key)$/i;
 
 export function createAuditEvent(
   type: AuditEventType,

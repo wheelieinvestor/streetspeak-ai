@@ -2007,6 +2007,14 @@ a:focus-visible {
   margin-top: 0;
 }
 
+.execution-readiness-panel {
+  border-color: rgba(255, 118, 118, 0.26);
+}
+
+.execution-readiness-list {
+  margin-top: var(--space-5);
+}
+
 .section-group {
   margin-top: clamp(52px, 7vw, 92px);
 }

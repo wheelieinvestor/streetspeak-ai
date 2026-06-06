@@ -70,7 +70,104 @@ describe("StreetSpeak CLI", () => {
     expect(result.stdout).toContain("order review: unavailable");
     expect(result.stdout).toContain("order placement: unavailable");
     expect(result.stdout).toContain("cancel order: unavailable");
+    expect(result.stdout).toContain("execution dry-run: available");
+    expect(result.stdout).toContain("execution manual handoff: available");
+    expect(result.stdout).toContain("execution kill switch: active");
     expect(result.stdout).toContain("raw MCP output printed: false");
+  });
+
+  it("prints execution readiness status", async () => {
+    const result = await runStreetSpeakCli(["execute", "status"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("StreetSpeak execution status");
+    expect(result.stdout).toContain("live execution: unavailable");
+    expect(result.stdout).toContain("order review: unavailable");
+    expect(result.stdout).toContain("order placement: unavailable");
+    expect(result.stdout).toContain("cancel order: unavailable");
+    expect(result.stdout).toContain("dry-run: available");
+    expect(result.stdout).toContain("manual handoff: available");
+    expect(result.stdout).toContain("kill switch: active");
+    expect(result.stdout).toContain("exact confirmation required: true");
+    expect(result.stdout).toContain("broker execution future-gated: true");
+    expect(result.stdout).toContain(
+      "Live execution is unavailable in this build."
+    );
+  });
+
+  it("creates a safe execution plan with safety gates", async () => {
+    const result = await runStreetSpeakCli(["execute", "plan", "buy 5 HOOD"], {
+      now: FIXED_NOW,
+      challengeCode: "4827"
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Execution Plan");
+    expect(result.stdout).toContain("ticket: BUY 5 HOOD MARKET DAY");
+    expect(result.stdout).toContain(
+      "lifecycle: draft -> parsed -> ticket_created -> safety_reviewed"
+    );
+    expect(result.stdout).toContain(
+      "future_broker_review_required -> future_live_execution_required"
+    );
+    expect(result.stdout).toContain(
+      "live_trading_disabled: block_live_execution"
+    );
+    expect(result.stdout).toContain(
+      "kill_switch_emergency_disable: block_live_execution"
+    );
+    expect(result.stdout).toContain("CONFIRM MOCK BUY 5 HOOD MARKET CODE 4827");
+    expect(result.stdout).toContain(
+      "Generic confirmations like yes, do it, or confirmed are rejected."
+    );
+    expect(result.stdout).toContain("No live broker order was placed.");
+    expect(result.stdout).toContain("This is not investment advice.");
+  });
+
+  it("submits execution dry-runs without live broker order placement", async () => {
+    const result = await runStreetSpeakCli(
+      ["execute", "dry-run", "buy 5 HOOD"],
+      {
+        now: FIXED_NOW,
+        challengeCode: "4827"
+      }
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Execution Dry Run");
+    expect(result.stdout).toContain("ticket: BUY 5 HOOD MARKET DAY");
+    expect(result.stdout).toContain("dry-run status: dry_run_submitted");
+    expect(result.stdout).toContain("live execution available: false");
+    expect(result.stdout).toContain("broker order reviewed: false");
+    expect(result.stdout).toContain("broker order placed: false");
+    expect(result.stdout).toContain(
+      "Dry-run submission recorded. No live broker order was placed."
+    );
+    expect(result.stdout).toContain(
+      "No Robinhood order review, order placement, cancel order, or live execution command was called."
+    );
+  });
+
+  it("creates execution manual handoff without sending to Robinhood", async () => {
+    const result = await runStreetSpeakCli([
+      "execute",
+      "handoff",
+      "buy 5 HOOD"
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Execution Manual Handoff");
+    expect(result.stdout).toContain("Copy/paste prompt:");
+    expect(result.stdout).toContain(
+      "Build or review a long equity order to buy 5 shares of HOOD."
+    );
+    expect(result.stdout).toContain(
+      "StreetSpeak did not send this to Robinhood"
+    );
+    expect(result.stdout).toContain("live execution available: false");
+    expect(result.stdout).toContain("broker order reviewed: false");
+    expect(result.stdout).toContain("broker order placed: false");
+    expect(result.stdout).toContain("No live broker order was placed.");
   });
 
   it("prints readable mock portfolio command output", async () => {
@@ -996,6 +1093,29 @@ describe("StreetSpeak CLI", () => {
       expect(result.stderr).toContain(
         "No order review, order placement, or cancel-order command exists."
       );
+    }
+  });
+
+  it("fails closed for forbidden execute live, place, review, and cancel commands", async () => {
+    for (const args of [
+      ["execute", "live", "buy 5 HOOD"],
+      ["execute", "place", "buy 5 HOOD"],
+      ["execute", "review", "buy 5 HOOD"],
+      ["execute", "cancel", "order-1"]
+    ]) {
+      const result = await runStreetSpeakCli(args);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain(
+        "Live execution is unavailable in this build."
+      );
+      expect(result.stderr).toContain(
+        "No execute live, place, review, or cancel command is available."
+      );
+      expect(result.stderr).toContain(
+        "No Robinhood review_equity_order, place_equity_order"
+      );
+      expect(result.stderr).toContain("No live broker order was placed.");
     }
   });
 });

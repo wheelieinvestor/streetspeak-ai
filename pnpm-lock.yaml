@@ -43,6 +43,9 @@ importers:
       "@streetspeak-ai/core":
         specifier: workspace:*
         version: link:../../packages/core
+      "@streetspeak-ai/execution":
+        specifier: workspace:*
+        version: link:../../packages/execution
 
   apps/web:
     dependencies:
@@ -55,6 +58,9 @@ importers:
       "@streetspeak-ai/core":
         specifier: workspace:*
         version: link:../../packages/core
+      "@streetspeak-ai/execution":
+        specifier: workspace:*
+        version: link:../../packages/execution
       "@streetspeak-ai/voice":
         specifier: workspace:*
         version: link:../../packages/voice
@@ -75,6 +81,18 @@ importers:
       "@streetspeak-ai/brokers":
         specifier: workspace:*
         version: link:../brokers
+      "@streetspeak-ai/orders":
+        specifier: workspace:*
+        version: link:../orders
+      "@streetspeak-ai/safety":
+        specifier: workspace:*
+        version: link:../safety
+
+  packages/execution:
+    dependencies:
+      "@streetspeak-ai/audit":
+        specifier: workspace:*
+        version: link:../audit
       "@streetspeak-ai/orders":
         specifier: workspace:*
         version: link:../orders

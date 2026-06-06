@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@streetspeak-ai/brokers": "workspace:*",
-    "@streetspeak-ai/core": "workspace:*"
+    "@streetspeak-ai/core": "workspace:*",
+    "@streetspeak-ai/execution": "workspace:*"
   }
 }
