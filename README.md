@@ -94,6 +94,8 @@ See [docs/design-direction.md](docs/design-direction.md), [docs/v0.1-public-demo
 For quick local CLI development, run the TypeScript source directly:
 
 ```sh
+pnpm streetspeak:dev
+pnpm streetspeak:dev session
 pnpm streetspeak:dev status
 pnpm streetspeak:dev demo "buy 5 HOOD"
 pnpm streetspeak:dev robinhood handoff "buy 5 HOOD"
@@ -104,12 +106,16 @@ For built CLI usage, build first and then use the production path:
 
 ```sh
 pnpm build
+pnpm streetspeak
+pnpm streetspeak session
 pnpm streetspeak status
 pnpm streetspeak demo "buy 5 HOOD"
 pnpm streetspeak robinhood handoff "buy 5 HOOD"
 ```
 
-StreetSpeak CLI does not place real trades, review Robinhood orders, place orders, cancel orders, store broker secrets, print raw MCP output, or provide investment advice. Robinhood Agent handoff is manual only: paste the prompt into the separate connected Robinhood Agent flow if you choose to continue there.
+Launching with no command opens the interactive terminal session with the StreetSpeak AI banner, `Voice-native trading desk for AI agents`, mock/read-only/live-trading status lines, and safety boundaries. Session commands include `help`, `status`, `show my portfolio`, `what is HOOD trading at`, `buy 5 HOOD`, `confirm <exact phrase>`, `receipt`, `handoff`, `smoke`, `speak on`, `speak off`, `clear`, and `exit`.
+
+StreetSpeak CLI does not place real trades, review Robinhood orders, place orders, cancel orders, store broker secrets, print raw MCP output, or provide investment advice. Robinhood Agent handoff is manual only: paste the prompt into the separate connected Robinhood Agent flow if you choose to continue there. Interactive session state is in memory only and is cleared when the process exits.
 
 See [docs/cli-quickstart.md](docs/cli-quickstart.md) and [docs/tomorrow-safe-use.md](docs/tomorrow-safe-use.md) for CLI usage and safety boundaries.
 
