@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
@@ -9,6 +10,7 @@ import {
   createMockTradingDeskTurn,
   parseMockTradingCommand,
   submitMockTradingDeskConfirmation,
+  type CommandSource,
   type MockTradingDeskState
 } from "@streetspeak-ai/core";
 import {
@@ -72,6 +74,7 @@ interface InteractiveSessionState {
   readonly lines: string[];
   readonly useColor: boolean;
   readonly input: InteractiveInput;
+  readonly commandSource: CommandSource;
   readonly writeOutput?: (text: string) => void | Promise<void>;
   latestTranscript?: string;
   latestState?: MockTradingDeskState;
@@ -113,8 +116,10 @@ const HELP_LINES = [
   "",
   "Commands:",
   "  streetspeak",
-  "  streetspeak session",
+  "  streetspeak session [--speak]",
+  "  streetspeak session --transcript-file ./transcript.txt",
   "  streetspeak status",
+  '  streetspeak transcript "buy 5 HOOD" [--speak]',
   '  streetspeak demo "show my portfolio"',
   '  streetspeak demo "what is HOOD trading at"',
   '  streetspeak demo "buy 5 HOOD" [--speak]',
@@ -122,6 +127,7 @@ const HELP_LINES = [
   '  streetspeak robinhood handoff "buy 5 HOOD"',
   '  streetspeak speak "text"',
   "",
+  "Voice bridge input is text transcripts only; StreetSpeak stores no raw audio.",
   "No live trading, order review, order placement, or cancel-order command exists in this CLI."
 ] as const;
 
@@ -141,7 +147,12 @@ const SESSION_HELP_LINES = [
   "  speak on",
   "  speak off",
   "  clear",
-  "  exit"
+  "  exit",
+  "",
+  "Next steps after a mock ticket:",
+  "  1. Generic confirmations like yes are rejected.",
+  "  2. Use confirm <exact phrase/code> for mock submission only.",
+  "  3. Type receipt for the mock receipt or handoff for a manual Robinhood Agent prompt."
 ] as const;
 
 const SAFE_DEMO_FOOTER = [
@@ -158,7 +169,10 @@ export async function runStreetSpeakCli(
   const [command, ...rest] = parsed.positionals;
 
   if (!command || command === "session") {
-    return runInteractiveSession(runtime);
+    return runInteractiveSession(runtime, {
+      initialSpeakEnabled: parsed.speak,
+      transcriptFilePath: parsed.transcriptFilePath
+    });
   }
 
   if (command === "help" || command === "--help" || command === "-h") {
@@ -167,6 +181,40 @@ export async function runStreetSpeakCli(
 
   if (command === "status") {
     return ok([...STATUS_LINES]);
+  }
+
+  if (parsed.transcriptFilePath !== undefined) {
+    return error(
+      "Use --transcript-file with the session command only. No transcript was submitted."
+    );
+  }
+
+  if (command === "transcript") {
+    const transcript = rest.join(" ").trim();
+
+    if (!transcript) {
+      return error(
+        'Provide text transcript input, such as: streetspeak transcript "buy 5 HOOD"'
+      );
+    }
+
+    const state = await createMockTradingDeskTurn(transcript, {
+      commandId: "cli-transcript-command",
+      ticketId: "cli-transcript-ticket",
+      challengeId: "cli-transcript-challenge",
+      source: "voice",
+      ...(runtime.now === undefined ? {} : { now: runtime.now }),
+      ...(runtime.challengeCode === undefined
+        ? {}
+        : { challengeCode: runtime.challengeCode })
+    });
+    const lines = renderTranscriptBridgeState(state, false);
+
+    if (parsed.speak) {
+      lines.push(await speakStatusLine(lines.join("\n"), runtime));
+    }
+
+    return ok(lines);
   }
 
   if (command === "demo") {
@@ -223,22 +271,73 @@ export async function runStreetSpeakCli(
   return error(`Unknown command: ${command}\n\n${HELP_LINES.join("\n")}`);
 }
 
+interface InteractiveSessionOptions {
+  readonly initialSpeakEnabled?: boolean;
+  readonly transcriptFilePath?: string;
+}
+
 async function runInteractiveSession(
-  runtime: StreetSpeakCliRuntime
+  runtime: StreetSpeakCliRuntime,
+  options: InteractiveSessionOptions = {}
 ): Promise<CliRunResult> {
   const startedAt = runtime.now ?? new Date();
+  let input = runtime.interactiveInput ?? [];
+  let transcriptFileNotice: readonly string[] | undefined;
+
+  if (options.transcriptFilePath !== undefined) {
+    const transcriptFile = await readTranscriptFile(options.transcriptFilePath);
+
+    if (!transcriptFile.ok) {
+      return error(transcriptFile.message);
+    }
+
+    input = transcriptFile.lines;
+    transcriptFileNotice = renderCard(
+      "Transcript File Bridge",
+      [
+        `Loaded ${transcriptFile.lines.length} text transcript line${
+          transcriptFile.lines.length === 1 ? "" : "s"
+        }.`,
+        "Input source: text transcript file provided by the user.",
+        "StreetSpeak stores no transcript file copy and no raw audio.",
+        "Every line routes through the same mock-only session command handler.",
+        "No live broker order was placed."
+      ],
+      runtime.color ?? false
+    );
+  }
+
   const state: InteractiveSessionState = {
     session: createMockSession({ now: startedAt }),
     startedAt,
     lines: [],
     useColor: runtime.color ?? false,
-    input: runtime.interactiveInput ?? [],
+    input,
+    commandSource:
+      options.transcriptFilePath === undefined ? "keyboard" : "voice",
     writeOutput: runtime.writeOutput,
-    speakEnabled: false,
+    speakEnabled: options.initialSpeakEnabled ?? false,
     turnCount: 0
   };
 
   await emit(state, `${renderStartupScreen(state.useColor)}\n`);
+  if (state.speakEnabled) {
+    await emit(
+      state,
+      `${renderCard(
+        "Speak Back",
+        [
+          "Speak-back is on for this session.",
+          "Responses may use local macOS say or stdout fallback.",
+          "No raw audio is stored."
+        ],
+        state.useColor
+      ).join("\n")}\n`
+    );
+  }
+  if (transcriptFileNotice) {
+    await emit(state, `${transcriptFileNotice.join("\n")}\n`);
+  }
 
   const iterator = toAsyncIterator(state.input);
 
@@ -259,7 +358,7 @@ async function runInteractiveSession(
     if (!transcript) {
       await emit(
         state,
-        "\nEmpty command ignored. Type help for session commands.\n"
+        "\nEmpty command ignored. Type help for session commands or paste a dictation transcript as text.\n"
       );
       continue;
     }
@@ -315,7 +414,11 @@ async function runInteractiveCommand(
     state.suppressSpeakForCurrentResponse = true;
     return renderCard(
       "Speak Back",
-      ["Speak-back is on for future responses.", "No raw audio is stored."],
+      [
+        "Speak-back is on for future responses.",
+        "Use speak off to disable it for this session.",
+        "No raw audio is stored."
+      ],
       state.useColor
     );
   }
@@ -325,7 +428,11 @@ async function runInteractiveCommand(
     state.suppressSpeakForCurrentResponse = true;
     return renderCard(
       "Speak Back",
-      ["Speak-back is off.", "No raw audio is stored."],
+      [
+        "Speak-back is off.",
+        "Preferences are per-session only; no config file was written.",
+        "No raw audio is stored."
+      ],
       state.useColor
     );
   }
@@ -356,11 +463,13 @@ async function runInteractiveCommand(
       "Robinhood Agent Handoff",
       handoff.supported
         ? [
+            "Copy/paste prompt:",
             handoff.prompt ?? "",
             handoff.message,
             "StreetSpeak did not send anything to Robinhood.",
             "StreetSpeak did not review the order.",
             "StreetSpeak did not place an order.",
+            "Do not place anything unless separately confirmed inside Robinhood Agent.",
             "This is not investment advice."
           ]
         : [
@@ -400,7 +509,7 @@ async function runInteractiveCommand(
     commandId: `cli-session-command-${state.turnCount}`,
     ticketId: `cli-session-ticket-${state.turnCount}`,
     challengeId: `cli-session-challenge-${state.turnCount}`,
-    source: "keyboard",
+    source: state.commandSource,
     ...(runtime.now === undefined ? {} : { now: runtime.now }),
     ...(runtime.challengeCode === undefined
       ? {}
@@ -488,7 +597,7 @@ function renderStartupScreen(useColor: boolean): string {
     accent,
     ...status,
     `Safety: ${safety}`,
-    "Type help for commands. Type exit to close.",
+    "Type help for commands. Paste dictation transcripts as text. Type exit to close.",
     ""
   ].join("\n");
 }
@@ -654,7 +763,8 @@ function renderExactConfirmationCard(
       "Type confirm <exact phrase> using the phrase below.",
       challenge.requiredPhrase,
       "Generic confirmations like yes, do it, or confirmed are rejected.",
-      "Mock submission only. No live broker order will be placed."
+      "Mock submission only. No live broker order will be placed.",
+      "After mock submission, type receipt for a copy-friendly receipt or handoff for a manual Robinhood Agent prompt."
     ],
     useColor
   );
@@ -666,7 +776,7 @@ function renderConfirmationRejectedCard(
 ): readonly string[] {
   const reason = state.confirmation?.accepted
     ? "unknown"
-    : state.confirmation?.reason ?? "unknown";
+    : (state.confirmation?.reason ?? "unknown");
 
   return renderCard(
     "Confirmation Rejected",
@@ -688,9 +798,7 @@ function renderMockSubmissionCard(
     "Mock Submission Complete",
     [
       state.message,
-      `Ticket: ${
-        state.ticket ? summarizeTicket(state.ticket) : "unavailable"
-      }`,
+      `Ticket: ${state.ticket ? summarizeTicket(state.ticket) : "unavailable"}`,
       `Mock order id: ${state.brokerResponse?.id ?? "unavailable"}`,
       `Mock broker status: ${state.brokerResponse?.status ?? "unavailable"}`,
       `Live execution available: ${
@@ -735,10 +843,31 @@ function renderReceiptCard(
       receipt.statement,
       `Live trading enabled: ${receipt.liveTradingEnabled}`,
       `Raw audio stored: ${receipt.rawAudioStored}`,
-      `Redacted audit events: ${receipt.auditEventCount}`
+      `Redacted audit events: ${receipt.auditEventCount}`,
+      "Copy/paste safe receipt: no broker credentials, account IDs, raw MCP output, or raw audio included."
     ],
     useColor
   );
+}
+
+function renderTranscriptBridgeState(
+  state: MockTradingDeskState,
+  useColor: boolean
+): string[] {
+  return [
+    ...renderCard(
+      "Voice Transcript Bridge",
+      [
+        "Input source: text transcript.",
+        `Command source: ${state.command.source}.`,
+        "Routed through the mock-only StreetSpeak command handler.",
+        "StreetSpeak stores no transcript copy and no raw audio.",
+        "No live broker order was placed."
+      ],
+      useColor
+    ),
+    ...renderInteractiveDeskState(state, useColor)
+  ];
 }
 
 function renderCard(
@@ -746,7 +875,11 @@ function renderCard(
   body: readonly string[],
   useColor: boolean
 ): readonly string[] {
-  const divider = style("----------------------------------------", "blue", useColor);
+  const divider = style(
+    "----------------------------------------",
+    "blue",
+    useColor
+  );
 
   return [
     "",
@@ -948,7 +1081,13 @@ export function buildRobinhoodAgentHandoff(
     parse.order.type === "limit"
       ? ` as a limit order at ${formatMoney(parse.order.limitPrice ?? 0)}`
       : "";
-  const prompt = `Ask your Robinhood Agent: Build or review a ${action}${limitClause}. Do not place the order unless I separately confirm inside the Robinhood Agent flow. Show me the estimated cost, current quote, buying power impact, and any pre-trade warnings first.`;
+  const prompt = [
+    "ASK YOUR ROBINHOOD AGENT:",
+    `Build or review a ${action}${limitClause}.`,
+    "Manual request only. Do not place the order unless I separately confirm inside the Robinhood Agent flow.",
+    "Before any order action, show the current quote, estimated cost, buying-power impact, and pre-trade warnings.",
+    "StreetSpeak context: mock-only CLI handoff. StreetSpeak did not send this to Robinhood, did not review the order, and did not place an order."
+  ].join("\n");
 
   return {
     supported: true,
@@ -960,14 +1099,39 @@ export function buildRobinhoodAgentHandoff(
 
 function parseCliArgs(argv: readonly string[]): {
   readonly speak: boolean;
+  readonly transcriptFilePath?: string;
   readonly positionals: readonly string[];
 } {
   const positionals: string[] = [];
   let speak = false;
+  let transcriptFilePath: string | undefined;
 
-  for (const arg of argv) {
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+
+    if (arg === undefined) {
+      continue;
+    }
+
     if (arg === "--speak") {
       speak = true;
+      continue;
+    }
+
+    if (arg === "--transcript-file") {
+      const nextArg = argv[index + 1];
+      if (!nextArg || nextArg.startsWith("--")) {
+        transcriptFilePath = "";
+        continue;
+      }
+
+      transcriptFilePath = nextArg;
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--transcript-file=")) {
+      transcriptFilePath = arg.slice("--transcript-file=".length);
       continue;
     }
 
@@ -976,6 +1140,7 @@ function parseCliArgs(argv: readonly string[]): {
 
   return {
     speak,
+    ...(transcriptFilePath === undefined ? {} : { transcriptFilePath }),
     positionals
   };
 }
@@ -1015,11 +1180,7 @@ async function runRobinhoodCommand(
     const transcript = rest.join(" ").trim();
     const handoff = buildRobinhoodAgentHandoff(transcript);
     const lines = handoff.supported
-      ? [
-          handoff.prompt ?? "",
-          handoff.message,
-          "This is not investment advice. StreetSpeak CLI has no Robinhood order review, order placement, cancel order, or live execution command."
-        ]
+      ? renderRobinhoodHandoffOutput(handoff)
       : [
           handoff.message,
           "No live broker order was placed. No Robinhood order review, order placement, cancel order, or live execution command exists in StreetSpeak CLI."
@@ -1031,6 +1192,75 @@ async function runRobinhoodCommand(
   return error(
     "Unknown Robinhood command. Available Robinhood CLI commands: smoke, handoff. No order review, order placement, or cancel-order command exists."
   );
+}
+
+function renderRobinhoodHandoffOutput(
+  handoff: RobinhoodHandoffResult
+): readonly string[] {
+  return [
+    "========================================",
+    "Robinhood Agent Manual Handoff",
+    "========================================",
+    "Copy/paste prompt:",
+    "",
+    handoff.prompt ?? "",
+    "",
+    "Safety boundary:",
+    handoff.message,
+    "Do not place anything unless separately confirmed inside Robinhood Agent.",
+    "StreetSpeak CLI has no Robinhood order review, order placement, cancel order, or live execution command.",
+    "No live broker order was placed.",
+    "This is not investment advice.",
+    "========================================"
+  ];
+}
+
+async function readTranscriptFile(
+  transcriptFilePath: string | undefined
+): Promise<
+  | {
+      readonly ok: true;
+      readonly lines: readonly string[];
+    }
+  | {
+      readonly ok: false;
+      readonly message: string;
+    }
+> {
+  if (!transcriptFilePath) {
+    return {
+      ok: false,
+      message:
+        "Provide a transcript file path after --transcript-file. No transcript was submitted."
+    };
+  }
+
+  try {
+    const contents = await readFile(transcriptFilePath, "utf8");
+    const lines = contents
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    if (lines.length === 0) {
+      return {
+        ok: false,
+        message:
+          "Transcript file did not contain any text command lines. No transcript was submitted."
+      };
+    }
+
+    return {
+      ok: true,
+      lines
+    };
+  } catch {
+    return {
+      ok: false,
+      message:
+        "Unable to read transcript file. No transcript was stored or submitted."
+    };
+  }
 }
 
 function renderDemoState(state: MockTradingDeskState): string[] {
@@ -1062,7 +1292,7 @@ function renderDemoState(state: MockTradingDeskState): string[] {
 
   if (state.ticket && state.safetyReview && state.challenge) {
     lines.push(
-      "Mock ticket only. No live broker order placed.",
+      "Mock ticket only. No live broker order was placed.",
       `ticket: ${state.ticket.side.toUpperCase()} ${state.ticket.quantity} ${state.ticket.symbol} ${state.ticket.type.toUpperCase()} ${state.ticket.timeInForce.toUpperCase()}`,
       `ticket id: ${state.ticket.id}`,
       "StreetSpeak safety review:",
@@ -1245,7 +1475,9 @@ if (
   const argv = process.argv.slice(2);
   const parsed = parseCliArgs(argv);
   const command = parsed.positionals[0];
-  const isInteractiveLaunch = !command || command === "session";
+  const isInteractiveLaunch =
+    (!command || command === "session") &&
+    parsed.transcriptFilePath === undefined;
   const readline = isInteractiveLaunch
     ? createInterface({
         input: process.stdin,
