@@ -7,11 +7,15 @@ import {
   appendAuditEvent,
   appendAuditEvents,
   clearAuditTimeline,
+  connectLocalDemo,
+  DEFAULT_DEMO_CONNECTION_STATE,
   DEFAULT_DEMO_SETTINGS,
+  disconnectLocalDemo,
   exportAuditTimeline,
   getDemoSafetyFlags,
   hasAcceptedOnboarding,
   loadAuditTimeline,
+  loadDemoConnectionState,
   loadDemoSettings,
   loadOnboardingAcceptance,
   resetAllDemoData,
@@ -81,16 +85,43 @@ describe("local demo state", () => {
     expect(
       saveDemoSettings(storage, {
         browserVoiceInputEnabled: false,
+        browserVoiceOutputEnabled: false,
         showAuditTimeline: false
       })
     ).toEqual({
       browserVoiceInputEnabled: false,
+      browserVoiceOutputEnabled: false,
       showAuditTimeline: false
     });
     expect(loadDemoSettings(storage)).toEqual({
       browserVoiceInputEnabled: false,
+      browserVoiceOutputEnabled: false,
       showAuditTimeline: false
     });
+  });
+
+  it("stores only local read-only demo connection state", () => {
+    const storage = new MemoryStorage();
+    const connected = connectLocalDemo(storage, {
+      now: new Date("2026-01-01T00:00:00.000Z")
+    });
+
+    expect(loadDemoConnectionState(storage)).toEqual(connected);
+    expect(connected).toEqual({
+      status: "connected",
+      mode: "local_demo_read_only",
+      connectedAt: "2026-01-01T00:00:00.000Z"
+    });
+    expect(getDemoSafetyFlags()).toEqual({
+      mockModeLocked: true,
+      liveTradingEnabled: false,
+      liveTradingAvailable: false
+    });
+
+    expect(disconnectLocalDemo(storage)).toEqual(DEFAULT_DEMO_CONNECTION_STATE);
+    expect(loadDemoConnectionState(storage)).toEqual(
+      DEFAULT_DEMO_CONNECTION_STATE
+    );
   });
 
   it("resets transient demo state without changing live-trading flags", () => {
@@ -214,8 +245,10 @@ describe("local demo state", () => {
     saveOnboardingAcceptance(storage);
     saveDemoSettings(storage, {
       browserVoiceInputEnabled: false,
+      browserVoiceOutputEnabled: false,
       showAuditTimeline: false
     });
+    connectLocalDemo(storage);
     storage.setItem("streetspeak-ai:last-command:v1", "buy 5 HOOD");
     appendAuditEvent(
       storage,
@@ -229,6 +262,9 @@ describe("local demo state", () => {
     });
     expect(hasAcceptedOnboarding(storage)).toBe(false);
     expect(loadDemoSettings(storage)).toEqual(DEFAULT_DEMO_SETTINGS);
+    expect(loadDemoConnectionState(storage)).toEqual(
+      DEFAULT_DEMO_CONNECTION_STATE
+    );
     expect(loadAuditTimeline(storage)).toEqual([]);
     expect(storage.has("streetspeak-ai:last-command:v1")).toBe(false);
   });

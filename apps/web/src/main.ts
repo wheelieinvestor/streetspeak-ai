@@ -16,18 +16,22 @@ import {
 import { createExecutionReadinessStatus } from "@streetspeak-ai/execution";
 import type { BrowserSpeechHost } from "@streetspeak-ai/voice";
 import {
+  BrowserVoiceOutputController,
   BrowserVoiceController,
   createInitialBrowserVoiceState,
+  type BrowserVoiceOutputState,
   type BrowserVoiceState
 } from "./browser-speech";
 import {
   appendAuditEvents,
   clearAuditTimeline,
+  connectLocalDemo,
   exportAuditTimeline,
   getBrowserLocalStorage,
   getDemoSafetyFlags,
   hasAcceptedOnboarding,
   loadAuditTimeline,
+  loadDemoConnectionState,
   loadDemoSettings,
   REQUIRED_ONBOARDING_ACKNOWLEDGEMENTS,
   resetAllDemoData,
@@ -35,6 +39,7 @@ import {
   resetOnboardingAcceptance,
   saveDemoSettings,
   saveOnboardingAcceptance,
+  type DemoConnectionState,
   type DemoSettings,
   type LocalDemoStorage,
   type OnboardingAcknowledgementId
@@ -86,6 +91,25 @@ const HERO_GUARDRAILS = [
   ["Data", "Local and redacted"]
 ] as const;
 
+type DashboardTab =
+  | "command"
+  | "workflow"
+  | "exports"
+  | "robinhood"
+  | "settings";
+
+const DASHBOARD_TABS: readonly {
+  readonly id: DashboardTab;
+  readonly label: string;
+  readonly detail: string;
+}[] = [
+  { id: "command", label: "Command", detail: "input" },
+  { id: "workflow", label: "Workflow", detail: "ticket" },
+  { id: "exports", label: "Exports", detail: "receipt" },
+  { id: "robinhood", label: "Robinhood", detail: "read-only" },
+  { id: "settings", label: "Settings", detail: "local" }
+];
+
 const session = createMockSession();
 const app = document.querySelector<HTMLElement>("#app");
 
@@ -99,9 +123,11 @@ if (app) {
       : (window as BrowserRobinhoodMcpReadOnlyClientHost);
   let currentState: MockTradingDeskState | null = null;
   let settings = loadDemoSettings(storage);
+  let connectionState = loadDemoConnectionState(storage);
   let persistedAuditTimeline = loadAuditTimeline(storage);
   let onboardingAccepted = hasAcceptedOnboarding(storage);
   let onboardingChecks = new Set<OnboardingAcknowledgementId>();
+  let activeTab: DashboardTab = "command";
   let busy = false;
   let exportStatusMessage = "";
   let receiptMarkdownPreview = "";
@@ -115,6 +141,11 @@ if (app) {
     browserHost,
     settings.browserVoiceInputEnabled
   );
+  let voiceOutputState: BrowserVoiceOutputState = {
+    status: "disabled",
+    message: "Browser voice output is disabled in local settings.",
+    lastSpokenText: ""
+  };
   const voiceController = new BrowserVoiceController(
     browserHost,
     {
@@ -128,6 +159,17 @@ if (app) {
     },
     settings.browserVoiceInputEnabled
   );
+  const voiceOutputController = new BrowserVoiceOutputController(
+    browserHost,
+    {
+      onStateChange(state) {
+        voiceOutputState = state;
+        render();
+      }
+    },
+    settings.browserVoiceOutputEnabled
+  );
+  voiceOutputState = voiceOutputController.state;
 
   const render = (): void => {
     app.innerHTML = createMarkup({
@@ -135,14 +177,17 @@ if (app) {
       busy,
       onboardingAccepted,
       onboardingChecks,
+      activeTab,
       settings,
+      connectionState,
       persistedAuditTimeline,
       exportStatusMessage,
       receiptMarkdownPreview,
       robinhoodMcpPanel,
       robinhoodMcpBusy,
       storageAvailable: storage !== null,
-      voiceState
+      voiceState,
+      voiceOutputState
     });
     bindEvents();
   };
@@ -168,8 +213,10 @@ if (app) {
     );
     exportStatusMessage = "Redacted audit events saved to this browser.";
     receiptMarkdownPreview = "";
+    activeTab = currentState.ticket ? "workflow" : "command";
     busy = false;
     render();
+    voiceOutputController.speakForState(currentState);
   };
 
   const submitConfirmation = async (
@@ -191,17 +238,23 @@ if (app) {
     );
     exportStatusMessage = "Redacted audit events saved to this browser.";
     receiptMarkdownPreview = "";
+    activeTab =
+      currentState.status === "mock_submitted" ? "exports" : "workflow";
     busy = false;
     render();
+    voiceOutputController.speakForState(currentState);
   };
 
   const resetLocalDemo = (): void => {
     resetDemoState(storage);
     voiceController.setEnabled(settings.browserVoiceInputEnabled);
+    voiceOutputController.setEnabled(settings.browserVoiceOutputEnabled);
     voiceState = voiceController.state;
+    voiceOutputState = voiceOutputController.state;
     currentState = null;
     receiptMarkdownPreview = "";
     exportStatusMessage = "Transient demo fields were reset.";
+    activeTab = "command";
     busy = false;
     render();
   };
@@ -209,12 +262,14 @@ if (app) {
   const clearLocalAuditTimeline = (): void => {
     persistedAuditTimeline = clearAuditTimeline(storage);
     exportStatusMessage = "Local audit timeline cleared from this browser.";
+    activeTab = "exports";
     render();
   };
 
   const resetEveryLocalDemoValue = (): void => {
     resetAllDemoData(storage);
     settings = loadDemoSettings(storage);
+    connectionState = loadDemoConnectionState(storage);
     onboardingAccepted = false;
     onboardingChecks = new Set();
     persistedAuditTimeline = loadAuditTimeline(storage);
@@ -223,7 +278,10 @@ if (app) {
     exportStatusMessage =
       "All local demo data was reset in this browser, including onboarding, settings, and audit events.";
     voiceController.setEnabled(settings.browserVoiceInputEnabled);
+    voiceOutputController.setEnabled(settings.browserVoiceOutputEnabled);
     voiceState = voiceController.state;
+    voiceOutputState = voiceOutputController.state;
+    activeTab = "command";
     busy = false;
     render();
   };
@@ -234,12 +292,14 @@ if (app) {
     if (!receipt) {
       exportStatusMessage =
         "Complete an exact-code mock submission before exporting a trade receipt.";
+      activeTab = "exports";
       render();
       return;
     }
 
     const markdown = renderMockTradeReceiptMarkdown(receipt);
     receiptMarkdownPreview = markdown;
+    activeTab = "exports";
 
     if (!navigator.clipboard) {
       exportStatusMessage =
@@ -265,6 +325,7 @@ if (app) {
     if (!receipt) {
       exportStatusMessage =
         "Complete an exact-code mock submission before exporting a trade receipt.";
+      activeTab = "exports";
       render();
       return;
     }
@@ -273,6 +334,7 @@ if (app) {
     downloadJsonFile("streetspeak-ai-mock-receipt.json", receipt);
     exportStatusMessage =
       "Receipt JSON downloaded locally. No upload or public URL was created.";
+    activeTab = "exports";
     render();
   };
 
@@ -284,13 +346,16 @@ if (app) {
     downloadJsonFile("streetspeak-ai-audit-timeline.json", auditExport);
     exportStatusMessage =
       "Audit timeline JSON downloaded locally from this browser.";
+    activeTab = "exports";
     render();
   };
 
   const updateSettings = (nextSettings: DemoSettings): void => {
     settings = saveDemoSettings(storage, nextSettings);
     voiceController.setEnabled(settings.browserVoiceInputEnabled);
+    voiceOutputController.setEnabled(settings.browserVoiceOutputEnabled);
     voiceState = voiceController.state;
+    voiceOutputState = voiceOutputController.state;
     render();
   };
 
@@ -299,6 +364,7 @@ if (app) {
   ): Promise<void> => {
     robinhoodMcpQuery = query;
     robinhoodMcpBusy = true;
+    activeTab = "robinhood";
     robinhoodMcpPanel = {
       ...robinhoodMcpPanel,
       query
@@ -310,6 +376,17 @@ if (app) {
       query
     });
     robinhoodMcpBusy = false;
+    render();
+  };
+
+  const connectLocalDemoInBrowser = (): void => {
+    if (connectionState.status === "connected") {
+      return;
+    }
+
+    connectionState = connectLocalDemo(storage);
+    exportStatusMessage =
+      "Local demo connection is active. Live trading remains unavailable.";
     render();
   };
 
@@ -347,6 +424,9 @@ if (app) {
     const voiceToggle = app.querySelector<HTMLInputElement>(
       "#setting-browser-voice"
     );
+    const voiceOutputToggle = app.querySelector<HTMLInputElement>(
+      "#setting-browser-voice-output"
+    );
     const auditToggle = app.querySelector<HTMLInputElement>(
       "#setting-show-audit"
     );
@@ -382,6 +462,26 @@ if (app) {
     const robinhoodMcpSearchInput = app.querySelector<HTMLInputElement>(
       "#robinhood-mcp-search-query"
     );
+    const tabButtons =
+      app.querySelectorAll<HTMLButtonElement>("[data-tab-target]");
+    const connectButton = app.querySelector<HTMLButtonElement>(
+      "#local-connect-button"
+    );
+
+    for (const button of tabButtons) {
+      button.addEventListener("click", () => {
+        const nextTab = parseDashboardTab(button.dataset.tabTarget);
+
+        if (!nextTab) {
+          return;
+        }
+
+        activeTab = nextTab;
+        render();
+      });
+    }
+
+    connectButton?.addEventListener("click", connectLocalDemoInBrowser);
 
     commandForm?.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -424,6 +524,13 @@ if (app) {
       updateSettings({
         ...settings,
         browserVoiceInputEnabled: Boolean(voiceToggle.checked)
+      });
+    });
+
+    voiceOutputToggle?.addEventListener("change", () => {
+      updateSettings({
+        ...settings,
+        browserVoiceOutputEnabled: Boolean(voiceOutputToggle.checked)
       });
     });
 
@@ -484,7 +591,9 @@ interface MarkupOptions {
   readonly busy: boolean;
   readonly onboardingAccepted: boolean;
   readonly onboardingChecks: ReadonlySet<OnboardingAcknowledgementId>;
+  readonly activeTab: DashboardTab;
   readonly settings: DemoSettings;
+  readonly connectionState: DemoConnectionState;
   readonly persistedAuditTimeline: readonly AuditEvent[];
   readonly exportStatusMessage: string;
   readonly receiptMarkdownPreview: string;
@@ -492,6 +601,7 @@ interface MarkupOptions {
   readonly robinhoodMcpBusy: boolean;
   readonly storageAvailable: boolean;
   readonly voiceState: BrowserVoiceState;
+  readonly voiceOutputState: BrowserVoiceOutputState;
 }
 
 function createMarkup(options: MarkupOptions): string {
@@ -500,14 +610,17 @@ function createMarkup(options: MarkupOptions): string {
     busy,
     onboardingAccepted,
     onboardingChecks,
+    activeTab,
     settings,
+    connectionState,
     persistedAuditTimeline,
     exportStatusMessage,
     receiptMarkdownPreview,
     robinhoodMcpPanel,
     robinhoodMcpBusy,
     storageAvailable,
-    voiceState
+    voiceState,
+    voiceOutputState
   } = options;
   const confirmationDisabled =
     busy ||
@@ -519,25 +632,37 @@ function createMarkup(options: MarkupOptions): string {
     voiceState.status === "listening"
       ? "StreetSpeak AI is listening…"
       : "Type a mock command, e.g. buy 5 HOOD";
+  const connectionConnected = connectionState.status === "connected";
+  const commandTabActive = activeTab === "command";
+  const workflowTabActive = activeTab === "workflow";
+  const exportsTabActive = activeTab === "exports";
+  const settingsTabActive = activeTab === "settings";
+  const robinhoodTabActive = activeTab === "robinhood";
+  const workflowPaneVisible =
+    commandTabActive || workflowTabActive || exportsTabActive;
 
   return `
     <main class="desk-shell">
       <header class="app-hero">
         <nav class="top-nav" aria-label="StreetSpeak AI sections">
-          <a class="brand-mark" href="#command-center" aria-label="StreetSpeak AI command center">
+          <button class="brand-mark brand-button" type="button" data-tab-target="command" aria-label="StreetSpeak AI command center">
             <span class="brand-glyph" aria-hidden="true">SS</span>
             <span>StreetSpeak AI</span>
-          </a>
-          <div class="nav-links">
-            <a href="#command-center">Command</a>
-            <a href="#mock-desk">Desk</a>
-            <a href="#execution-readiness">Execution</a>
-            <a href="#robinhood-boundary">Robinhood</a>
-            <a href="#local-exports">Exports</a>
-          </div>
-          <div class="mode-stack" aria-label="mode status">
-            <span class="badge badge-positive">Mock Only</span>
-            <span class="badge badge-danger">No Live Trading</span>
+          </button>
+          <div class="top-actions">
+            <div class="mode-stack" aria-label="mode status">
+              <span class="badge badge-positive">Mock Only</span>
+              <span class="badge badge-danger">No Live Trading</span>
+            </div>
+            <button
+              id="local-connect-button"
+              class="connect-button ${connectionConnected ? "is-connected" : ""}"
+              type="button"
+              aria-pressed="${String(connectionConnected)}"
+            >
+              <span class="connect-dot" aria-hidden="true"></span>
+              <span>${connectionConnected ? "Connected" : "Connect"}</span>
+            </button>
           </div>
         </nav>
 
@@ -548,8 +673,8 @@ function createMarkup(options: MarkupOptions): string {
             <p class="hero-tagline">Voice-native trading desk for AI agents</p>
             <p class="subtitle">A screenshot-ready local mock workflow for self-directed users: static portfolio data, mock tickets, exact-code confirmation, local receipts, and no investment advice.</p>
             <div class="hero-actions">
-              <a class="primary-button" href="#command-center">Open command center</a>
-              <a class="secondary-button" href="#robinhood-boundary">View read-only boundary</a>
+              <button type="button" class="primary-button" data-tab-target="command">Open command center</button>
+              <button type="button" class="secondary-button" data-tab-target="robinhood">View read-only boundary</button>
             </div>
           </div>
 
@@ -568,6 +693,8 @@ function createMarkup(options: MarkupOptions): string {
         </div>
       </header>
 
+      ${renderNavigationDock(activeTab, connectionState)}
+
       <section class="status-strip" aria-label="public demo guardrails">
         <div>
           <strong>No live broker execution</strong>
@@ -585,7 +712,7 @@ function createMarkup(options: MarkupOptions): string {
         <div><span class="status-dot status-dot-danger"></span><strong>Live trading</strong><span>unavailable</span></div>
       </section>
 
-      <section id="command-center" class="command-band" aria-label="mock command input">
+      <section id="command-center" class="command-band tab-panel ${commandTabActive ? "is-active" : ""}" aria-label="mock command input" ${commandTabActive ? "" : "hidden"}>
         <div class="command-layout">
           <div class="command-card">
             <div class="command-card-heading">
@@ -618,22 +745,28 @@ function createMarkup(options: MarkupOptions): string {
               </div>
             </div>
           </div>
-          ${renderVoiceInput(voiceState, settings, busy, onboardingAccepted)}
+          ${renderVoiceInput(
+            voiceState,
+            voiceOutputState,
+            settings,
+            busy,
+            onboardingAccepted
+          )}
         </div>
       </section>
 
-      <section class="workflow-rail" aria-label="mock trading workflow">
+      <section class="workflow-rail tab-panel ${commandTabActive || workflowTabActive ? "is-active" : ""}" aria-label="mock trading workflow" ${commandTabActive || workflowTabActive ? "" : "hidden"}>
         ${WORKFLOW_STEPS.map(
           (step, index) =>
             `<div class="workflow-step ${getWorkflowStepClass(state, index)}"><span>${index + 1}</span>${escapeHtml(step)}</div>`
         ).join("")}
       </section>
 
-      <section id="mock-desk" class="section-group primary-workflow" aria-label="Mock Trading Desk">
+      <section id="mock-desk" class="section-group primary-workflow tab-panel ${workflowPaneVisible ? "is-active" : ""}" aria-label="Mock Trading Desk" ${workflowPaneVisible ? "" : "hidden"}>
         <div class="section-header">
           <div>
-            <p class="eyebrow">Mock Trading Desk</p>
-            <h2>Command-to-receipt workflow</h2>
+            <p class="eyebrow">${exportsTabActive ? "Local Exports" : workflowTabActive ? "Mock Trading Desk" : "Command Output"}</p>
+            <h2>${exportsTabActive ? "Receipts and audit timeline" : workflowTabActive ? "Ticket review and confirmation" : "Current command result"}</h2>
           </div>
           <div class="mode-stack">
             <span class="badge badge-positive">Mock Only</span>
@@ -642,7 +775,7 @@ function createMarkup(options: MarkupOptions): string {
         </div>
 
         <section class="desk-grid">
-          <section class="panel panel-span answer-panel" aria-label="mock response">
+          <section class="panel panel-span answer-panel ${commandTabActive || workflowTabActive ? "" : "is-panel-hidden"}" aria-label="mock response" ${commandTabActive || workflowTabActive ? "" : "hidden"}>
             <div class="panel-heading">
               <h2><span class="step-kicker">01</span> Answer Output</h2>
               ${state ? `<span class="status-pill">${escapeHtml(state.status)}</span>` : ""}
@@ -651,7 +784,7 @@ function createMarkup(options: MarkupOptions): string {
             ${renderQuote(state)}
           </section>
 
-          <section class="panel portfolio-panel" aria-label="mock portfolio">
+          <section class="panel portfolio-panel ${commandTabActive ? "" : "is-panel-hidden"}" aria-label="mock portfolio" ${commandTabActive ? "" : "hidden"}>
             <div class="panel-heading">
               <h2>Mock Portfolio</h2>
               <span class="muted">static fixture</span>
@@ -659,7 +792,7 @@ function createMarkup(options: MarkupOptions): string {
             ${renderPortfolio(state)}
           </section>
 
-          <section class="panel" aria-label="parsed command">
+          <section class="panel ${workflowTabActive ? "" : "is-panel-hidden"}" aria-label="parsed command" ${workflowTabActive ? "" : "hidden"}>
             <div class="panel-heading">
               <h2><span class="step-kicker">02</span> Parsed Intent</h2>
               <span class="muted">${escapeHtml(state?.route.intent ?? "none")}</span>
@@ -667,7 +800,7 @@ function createMarkup(options: MarkupOptions): string {
             ${renderParsedCommand(state)}
           </section>
 
-          <section class="panel ticket-panel" aria-label="order ticket">
+          <section class="panel ticket-panel ${workflowTabActive ? "" : "is-panel-hidden"}" aria-label="order ticket" ${workflowTabActive ? "" : "hidden"}>
             <div class="panel-heading">
               <h2><span class="step-kicker">03</span> Mock Order Ticket</h2>
               <span class="muted">mock equity</span>
@@ -675,7 +808,7 @@ function createMarkup(options: MarkupOptions): string {
             ${renderTicket(state)}
           </section>
 
-          <section class="panel safety-panel" aria-label="safety review">
+          <section class="panel safety-panel ${workflowTabActive ? "" : "is-panel-hidden"}" aria-label="safety review" ${workflowTabActive ? "" : "hidden"}>
             <div class="panel-heading">
               <h2><span class="step-kicker">04</span> Safety Review</h2>
               <span class="muted">required</span>
@@ -683,7 +816,7 @@ function createMarkup(options: MarkupOptions): string {
             ${renderSafety(state)}
           </section>
 
-          <section class="panel panel-span confirmation-panel" aria-label="confirmation">
+          <section class="panel panel-span confirmation-panel ${workflowTabActive ? "" : "is-panel-hidden"}" aria-label="confirmation" ${workflowTabActive ? "" : "hidden"}>
             <div class="panel-heading">
               <h2><span class="step-kicker">05</span> Exact Confirmation</h2>
               <span class="muted">exact phrase and code required</span>
@@ -691,7 +824,7 @@ function createMarkup(options: MarkupOptions): string {
             ${renderConfirmation(state, confirmationDisabled, busy)}
           </section>
 
-          <section class="panel broker-panel" aria-label="mock broker response">
+          <section class="panel broker-panel ${workflowTabActive ? "" : "is-panel-hidden"}" aria-label="mock broker response" ${workflowTabActive ? "" : "hidden"}>
             <div class="panel-heading">
               <h2><span class="step-kicker">06</span> Mock Submission</h2>
               <span class="muted">no live order</span>
@@ -699,7 +832,7 @@ function createMarkup(options: MarkupOptions): string {
             ${renderBrokerResponse(state)}
           </section>
 
-          <section id="local-exports" class="panel panel-span receipt-panel" aria-label="local exports and receipts">
+          <section id="local-exports" class="panel panel-span receipt-panel ${exportsTabActive ? "" : "is-panel-hidden"}" aria-label="local exports and receipts" ${exportsTabActive ? "" : "hidden"}>
             <div class="panel-heading">
               <h2>Local Receipt And Exports</h2>
               <span class="badge badge-danger">Mock Only / No Live Trading</span>
@@ -707,7 +840,7 @@ function createMarkup(options: MarkupOptions): string {
             ${renderExportPanel(state, persistedAuditTimeline, exportStatusMessage, receiptMarkdownPreview, storageAvailable)}
           </section>
 
-          <section class="panel audit-panel" aria-label="audit timeline">
+          <section class="panel audit-panel ${exportsTabActive ? "" : "is-panel-hidden"}" aria-label="audit timeline" ${exportsTabActive ? "" : "hidden"}>
             <div class="panel-heading">
               <h2>Audit Timeline</h2>
               <span class="muted">local browser storage</span>
@@ -717,13 +850,13 @@ function createMarkup(options: MarkupOptions): string {
         </section>
       </section>
 
-      <div class="supporting-panels" aria-label="demo settings and safety summary">
+      <div class="supporting-panels tab-panel ${settingsTabActive ? "is-active" : ""}" aria-label="demo settings and safety summary" ${settingsTabActive ? "" : "hidden"}>
         ${renderSettings(settings, storageAvailable)}
         ${renderExecutionReadinessPanel()}
         ${renderV01MockDemoStatus()}
       </div>
 
-      <section id="robinhood-boundary" class="section-group robinhood-section" aria-label="Robinhood boundaries">
+      <section id="robinhood-boundary" class="section-group robinhood-section tab-panel ${robinhoodTabActive ? "is-active" : ""}" aria-label="Robinhood boundaries" ${robinhoodTabActive ? "" : "hidden"}>
         <div class="section-header">
           <div>
             <p class="eyebrow">Robinhood Boundary</p>
@@ -744,6 +877,45 @@ function createMarkup(options: MarkupOptions): string {
         : renderOnboardingModal(onboardingChecks, storageAvailable)
     }
   `;
+}
+
+function renderNavigationDock(
+  activeTab: DashboardTab,
+  connectionState: DemoConnectionState
+): string {
+  const connectionConnected = connectionState.status === "connected";
+
+  return `
+    <nav class="navigation-dock" aria-label="Dashboard tabs">
+      <div class="dock-tabs" role="tablist">
+        ${DASHBOARD_TABS.map(
+          (tab) => `
+            <button
+              type="button"
+              class="dock-button ${activeTab === tab.id ? "is-active" : ""}"
+              data-tab-target="${escapeHtml(tab.id)}"
+              role="tab"
+              aria-selected="${String(activeTab === tab.id)}"
+            >
+              <strong>${escapeHtml(tab.label)}</strong>
+              <span>${escapeHtml(tab.detail)}</span>
+            </button>
+          `
+        ).join("")}
+      </div>
+      <div class="dock-connection-summary">
+        <span class="status-dot ${connectionConnected ? "status-dot-active" : ""}"></span>
+        <strong>${connectionConnected ? "Connected" : "Disconnected"}</strong>
+        <span>local demo</span>
+      </div>
+    </nav>
+  `;
+}
+
+function parseDashboardTab(value: string | undefined): DashboardTab | null {
+  const tab = DASHBOARD_TABS.find((candidate) => candidate.id === value);
+
+  return tab?.id ?? null;
 }
 
 function getWorkflowStepClass(
@@ -795,6 +967,10 @@ function renderSettings(
         <label class="toggle-row" for="setting-browser-voice">
           <input id="setting-browser-voice" type="checkbox" ${settings.browserVoiceInputEnabled ? "checked" : ""} />
           <span>Browser voice input</span>
+        </label>
+        <label class="toggle-row" for="setting-browser-voice-output">
+          <input id="setting-browser-voice-output" type="checkbox" ${settings.browserVoiceOutputEnabled ? "checked" : ""} />
+          <span>Browser voice output</span>
         </label>
         <label class="toggle-row" for="setting-show-audit">
           <input id="setting-show-audit" type="checkbox" ${settings.showAuditTimeline ? "checked" : ""} />
@@ -875,6 +1051,7 @@ function renderV01MockDemoStatus(): string {
 
 function renderVoiceInput(
   voiceState: BrowserVoiceState,
+  voiceOutputState: BrowserVoiceOutputState,
   settings: DemoSettings,
   busy: boolean,
   onboardingAccepted: boolean
@@ -887,27 +1064,38 @@ function renderVoiceInput(
     !busy;
   const canStop = voiceState.status === "listening";
   const isListening = voiceState.status === "listening";
+  const isSpeaking = voiceOutputState.status === "speaking";
   const voiceMessage = isListening
     ? "StreetSpeak AI is listening…"
     : voiceState.message;
 
   return `
-    <div class="voice-panel ${isListening ? "is-listening" : ""}" aria-label="browser voice input">
+    <div class="voice-panel ${isListening || isSpeaking ? "is-listening" : ""}" aria-label="browser voice input and output">
       <span class="voice-orb" aria-hidden="true"></span>
       <div class="voice-heading">
         <span class="section-label">Browser-native voice</span>
-        <span class="status-pill">${escapeHtml(voiceState.status)}</span>
+        <span class="status-pill">${escapeHtml(isSpeaking ? "speaking" : voiceState.status)}</span>
       </div>
       <div class="voice-actions">
         <button id="browser-voice-button" type="button" ${canStart ? "" : "disabled"}>Listen</button>
         <button id="stop-browser-voice-button" type="button" class="secondary-button" ${canStop ? "" : "disabled"}>Stop</button>
       </div>
+      <dl class="voice-status-grid" aria-label="browser voice status">
+        <div><dt>Input</dt><dd>${escapeHtml(voiceState.status)}</dd></div>
+        <div><dt>Output</dt><dd>${escapeHtml(voiceOutputState.status)}</dd></div>
+      </dl>
       <p class="voice-note">${escapeHtml(voiceMessage)}</p>
+      <p class="voice-note">${escapeHtml(voiceOutputState.message)}</p>
       <p class="voice-note">Browser-native speech behavior depends on the browser and device. StreetSpeak AI does not store raw audio or send raw audio to a StreetSpeak server.</p>
       ${
         voiceState.lastTranscript
           ? `<div class="transcript"><span>Transcript preview</span><strong>${escapeHtml(voiceState.lastTranscript)}</strong></div>`
           : `<p class="transcript transcript-empty">Transcript preview appears here after browser speech returns text.</p>`
+      }
+      ${
+        voiceOutputState.lastSpokenText
+          ? `<div class="transcript"><span>Last safe speak-back</span><strong>${escapeHtml(voiceOutputState.lastSpokenText)}</strong></div>`
+          : `<p class="transcript transcript-empty">Safe speak-back summaries appear here after commands run.</p>`
       }
     </div>
   `;

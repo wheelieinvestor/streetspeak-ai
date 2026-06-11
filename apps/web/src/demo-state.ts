@@ -32,6 +32,7 @@ export interface OnboardingAcceptance {
 
 export interface DemoSettings {
   readonly browserVoiceInputEnabled: boolean;
+  readonly browserVoiceOutputEnabled: boolean;
   readonly showAuditTimeline: boolean;
 }
 
@@ -39,6 +40,14 @@ export interface DemoRuntimeState {
   readonly commandText: string;
   readonly confirmationText: string;
   readonly lastVoiceTranscript: string;
+}
+
+export type DemoConnectionStatus = "disconnected" | "connected";
+
+export interface DemoConnectionState {
+  readonly status: DemoConnectionStatus;
+  readonly mode: "local_demo_read_only";
+  readonly connectedAt?: string;
 }
 
 export interface DemoSafetyFlags {
@@ -84,6 +93,7 @@ export const REQUIRED_ONBOARDING_ACKNOWLEDGEMENTS: readonly OnboardingAcknowledg
 
 export const DEFAULT_DEMO_SETTINGS: DemoSettings = {
   browserVoiceInputEnabled: true,
+  browserVoiceOutputEnabled: true,
   showAuditTimeline: true
 };
 
@@ -93,9 +103,15 @@ export const DEMO_SAFETY_FLAGS: DemoSafetyFlags = {
   liveTradingAvailable: false
 };
 
+export const DEFAULT_DEMO_CONNECTION_STATE: DemoConnectionState = {
+  status: "disconnected",
+  mode: "local_demo_read_only"
+};
+
 const ONBOARDING_STORAGE_KEY = "streetspeak-ai:onboarding:v1";
 const SETTINGS_STORAGE_KEY = "streetspeak-ai:settings:v1";
 const AUDIT_TIMELINE_STORAGE_KEY = "streetspeak-ai:audit-timeline:v1";
+const CONNECTION_STORAGE_KEY = "streetspeak-ai:connection:v1";
 const TRANSIENT_DEMO_STORAGE_KEYS = [
   "streetspeak-ai:last-command:v1",
   "streetspeak-ai:last-confirmation:v1",
@@ -216,6 +232,51 @@ export function loadDemoSettings(
   }
 }
 
+export function loadDemoConnectionState(
+  storage: LocalDemoStorage | null
+): DemoConnectionState {
+  if (!storage) {
+    return DEFAULT_DEMO_CONNECTION_STATE;
+  }
+
+  const raw = storage.getItem(CONNECTION_STORAGE_KEY);
+
+  if (!raw) {
+    return DEFAULT_DEMO_CONNECTION_STATE;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<DemoConnectionState>;
+
+    return normalizeDemoConnectionState(parsed);
+  } catch {
+    return DEFAULT_DEMO_CONNECTION_STATE;
+  }
+}
+
+export function connectLocalDemo(
+  storage: LocalDemoStorage | null,
+  options: { readonly now?: Date } = {}
+): DemoConnectionState {
+  const connection: DemoConnectionState = {
+    status: "connected",
+    mode: "local_demo_read_only",
+    connectedAt: (options.now ?? new Date()).toISOString()
+  };
+
+  storage?.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(connection));
+
+  return connection;
+}
+
+export function disconnectLocalDemo(
+  storage: LocalDemoStorage | null
+): DemoConnectionState {
+  storage?.removeItem(CONNECTION_STORAGE_KEY);
+
+  return DEFAULT_DEMO_CONNECTION_STATE;
+}
+
 export function saveDemoSettings(
   storage: LocalDemoStorage | null,
   settings: DemoSettings
@@ -328,6 +389,7 @@ export function resetAllDemoData(
   resetOnboardingAcceptance(storage);
   clearAuditTimeline(storage);
   storage?.removeItem(SETTINGS_STORAGE_KEY);
+  disconnectLocalDemo(storage);
 
   return createDefaultDemoRuntimeState();
 }
@@ -353,11 +415,33 @@ function normalizeDemoSettings(candidate: Partial<DemoSettings>): DemoSettings {
       typeof candidate.browserVoiceInputEnabled === "boolean"
         ? candidate.browserVoiceInputEnabled
         : DEFAULT_DEMO_SETTINGS.browserVoiceInputEnabled,
+    browserVoiceOutputEnabled:
+      typeof candidate.browserVoiceOutputEnabled === "boolean"
+        ? candidate.browserVoiceOutputEnabled
+        : DEFAULT_DEMO_SETTINGS.browserVoiceOutputEnabled,
     showAuditTimeline:
       typeof candidate.showAuditTimeline === "boolean"
         ? candidate.showAuditTimeline
         : DEFAULT_DEMO_SETTINGS.showAuditTimeline
   };
+}
+
+function normalizeDemoConnectionState(
+  candidate: Partial<DemoConnectionState>
+): DemoConnectionState {
+  if (
+    candidate.status === "connected" &&
+    candidate.mode === "local_demo_read_only" &&
+    typeof candidate.connectedAt === "string"
+  ) {
+    return {
+      status: "connected",
+      mode: "local_demo_read_only",
+      connectedAt: candidate.connectedAt
+    };
+  }
+
+  return DEFAULT_DEMO_CONNECTION_STATE;
 }
 
 function isValidOnboardingAcceptance(
