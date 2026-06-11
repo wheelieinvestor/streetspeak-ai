@@ -45,6 +45,11 @@ import {
   type OnboardingAcknowledgementId
 } from "./demo-state";
 import {
+  buildConversationTimeline,
+  createClarificationPrompt,
+  type ClarificationOption
+} from "./conversation";
+import {
   createRobinhoodFixtureExplorerModel,
   V01_SAFETY_CHECKLIST,
   V01_MOCK_DEMO_STATUS,
@@ -415,6 +420,9 @@ if (app) {
     );
     const exampleButtons =
       app.querySelectorAll<HTMLButtonElement>("[data-command]");
+    const clarificationButtons = app.querySelectorAll<HTMLButtonElement>(
+      "[data-clarification-command]"
+    );
     const voiceButton = app.querySelector<HTMLButtonElement>(
       "#browser-voice-button"
     );
@@ -504,6 +512,17 @@ if (app) {
     for (const button of exampleButtons) {
       button.addEventListener("click", () => {
         const command = button.dataset.command;
+
+        if (command && commandInput) {
+          commandInput.value = command;
+          void runCommand(command, "keyboard");
+        }
+      });
+    }
+
+    for (const button of clarificationButtons) {
+      button.addEventListener("click", () => {
+        const command = button.dataset.clarificationCommand;
 
         if (command && commandInput) {
           commandInput.value = command;
@@ -775,13 +794,12 @@ function createMarkup(options: MarkupOptions): string {
         </div>
 
         <section class="desk-grid">
-          <section class="panel panel-span answer-panel ${commandTabActive || workflowTabActive ? "" : "is-panel-hidden"}" aria-label="mock response" ${commandTabActive || workflowTabActive ? "" : "hidden"}>
+          <section class="panel panel-span conversation-panel ${commandTabActive || workflowTabActive ? "" : "is-panel-hidden"}" aria-label="conversation timeline" ${commandTabActive || workflowTabActive ? "" : "hidden"}>
             <div class="panel-heading">
-              <h2><span class="step-kicker">01</span> Answer Output</h2>
+              <h2><span class="step-kicker">01</span> Conversation Timeline</h2>
               ${state ? `<span class="status-pill">${escapeHtml(state.status)}</span>` : ""}
             </div>
-            <p class="answer">${escapeHtml(state?.answer ?? state?.message ?? "Accept the local safety onboarding, then run a mock command.")}</p>
-            ${renderQuote(state)}
+            ${renderConversationTimeline(state)}
           </section>
 
           <section class="panel portfolio-panel ${commandTabActive ? "" : "is-panel-hidden"}" aria-label="mock portfolio" ${commandTabActive ? "" : "hidden"}>
@@ -916,6 +934,56 @@ function parseDashboardTab(value: string | undefined): DashboardTab | null {
   const tab = DASHBOARD_TABS.find((candidate) => candidate.id === value);
 
   return tab?.id ?? null;
+}
+
+function renderConversationTimeline(
+  state: MockTradingDeskState | null
+): string {
+  const entries = buildConversationTimeline(state);
+  const clarification = createClarificationPrompt(state);
+
+  return `
+    <ol class="conversation-list">
+      ${entries
+        .map(
+          (entry) => `
+            <li class="conversation-entry conversation-entry-${escapeHtml(entry.kind)} conversation-entry-${escapeHtml(entry.tone)}">
+              <span>${escapeHtml(entry.title)}</span>
+              <p>${escapeHtml(entry.body)}</p>
+            </li>
+          `
+        )
+        .join("")}
+    </ol>
+    ${clarification ? renderClarificationOptions(clarification.options) : ""}
+  `;
+}
+
+function renderClarificationOptions(
+  options: readonly ClarificationOption[]
+): string {
+  if (options.length === 0) {
+    return `<p class="empty">Type a clearer command to continue. No mock ticket was created.</p>`;
+  }
+
+  return `
+    <div class="clarification-actions" aria-label="clarification options">
+      ${options
+        .map(
+          (option) => `
+            <button
+              type="button"
+              class="secondary-button"
+              data-clarification-command="${escapeHtml(option.command)}"
+            >
+              <span>${escapeHtml(option.label)}</span>
+              <small>${escapeHtml(option.safetyNote)}</small>
+            </button>
+          `
+        )
+        .join("")}
+    </div>
+  `;
 }
 
 function getWorkflowStepClass(
@@ -1635,24 +1703,6 @@ function renderPortfolio(state: MockTradingDeskState | null): string {
         )
         .join("")}
     </ul>
-  `;
-}
-
-function renderQuote(state: MockTradingDeskState | null): string {
-  const quote = state?.quote;
-
-  if (!quote) {
-    return "";
-  }
-
-  return `
-    <dl class="quote-strip" aria-label="current mock quote">
-      <div><dt>Symbol</dt><dd>${escapeHtml(quote.symbol)}</dd></div>
-      <div><dt>Last</dt><dd>${formatCurrency(quote.last)}</dd></div>
-      <div><dt>Bid</dt><dd>${formatCurrency(quote.bid)}</dd></div>
-      <div><dt>Ask</dt><dd>${formatCurrency(quote.ask)}</dd></div>
-      <div><dt>Source</dt><dd>${escapeHtml(quote.label)}</dd></div>
-    </dl>
   `;
 }
 

@@ -849,6 +849,69 @@ h3 {
   line-height: 1.5;
 }
 
+.conversation-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.conversation-entry {
+  display: grid;
+  gap: var(--space-1);
+  border: 1px solid rgba(37, 99, 255, 0.12);
+  border-radius: var(--radius-card);
+  padding: var(--space-3);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.conversation-entry span {
+  color: var(--color-blue-800);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.conversation-entry p {
+  margin: 0;
+  color: var(--color-ink);
+  font-size: 0.95rem;
+  line-height: 1.42;
+}
+
+.conversation-entry-warning {
+  border-color: rgba(255, 209, 102, 0.3);
+  background: rgba(255, 209, 102, 0.12);
+}
+
+.conversation-entry-success {
+  border-color: rgba(66, 217, 155, 0.28);
+  background: rgba(66, 217, 155, 0.12);
+}
+
+.clarification-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.clarification-actions button {
+  display: grid;
+  height: 100%;
+  gap: var(--space-1);
+  justify-items: start;
+  text-align: left;
+}
+
+.clarification-actions small {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
 .quote-strip {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   margin-top: var(--space-4);
@@ -2465,7 +2528,9 @@ a:focus-visible {
 .status-grid dd,
 .status-grid strong,
 .education-list strong,
-.safety-checklist strong {
+.safety-checklist strong,
+.conversation-entry span,
+.conversation-entry p {
   color: #f3f8ff;
 }
 
@@ -2892,6 +2957,7 @@ body::before {
 .safety-checklist li,
 .settings-status div,
 .hero-metrics div,
+.conversation-entry,
 .dock-button,
 .dock-connection-summary,
 .navigation-dock,
@@ -3040,6 +3106,10 @@ body::before {
   .hero-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .clarification-actions {
+    grid-template-columns: 1fr;
   }
 }
 
