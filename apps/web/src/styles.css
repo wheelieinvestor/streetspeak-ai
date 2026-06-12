@@ -2952,12 +2952,98 @@ body::before {
   margin-top: 0;
 }
 
+.readiness-panel {
+  scroll-margin-top: 110px;
+}
+
+.readiness-panel .panel-heading h2 {
+  margin-top: 2px;
+}
+
+.readiness-timestamp {
+  margin: calc(var(--space-3) * -1) 0 var(--space-4);
+  color: var(--color-muted);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.readiness-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-5);
+}
+
+.readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.readiness-item {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+  border: 1px solid rgba(177, 208, 255, 0.18);
+  border-left-width: 4px;
+  border-radius: 8px;
+  padding: 15px 16px;
+  background: rgba(4, 14, 45, 0.42);
+}
+
+.readiness-item dt {
+  color: var(--color-muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.readiness-item dd {
+  margin: 0;
+  color: #f3f8ff;
+  font-size: 1rem;
+  font-weight: 950;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.readiness-item small {
+  color: rgba(211, 226, 249, 0.76);
+  line-height: 1.35;
+}
+
+.readiness-item-ready {
+  border-left-color: #42d99b;
+}
+
+.readiness-item-active {
+  border-left-color: #77b7ff;
+  background: rgba(25, 102, 255, 0.14);
+}
+
+.readiness-item-attention {
+  border-left-color: #ffd166;
+  background: rgba(255, 209, 102, 0.12);
+}
+
+.readiness-item-disabled {
+  border-left-color: rgba(211, 226, 249, 0.52);
+}
+
+.readiness-item-unavailable {
+  border-left-color: #ff7a7a;
+  background: rgba(255, 122, 122, 0.1);
+}
+
 .status-grid div,
 .education-list li,
 .safety-checklist li,
 .settings-status div,
 .hero-metrics div,
 .conversation-entry,
+.readiness-item,
 .dock-button,
 .dock-connection-summary,
 .navigation-dock,
@@ -3009,6 +3095,10 @@ body::before {
 
   .dock-connection-summary {
     width: 100%;
+  }
+
+  .readiness-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -3109,6 +3199,10 @@ body::before {
   }
 
   .clarification-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .readiness-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -26,6 +26,7 @@ import {
   appendAuditEvents,
   clearAuditTimeline,
   connectLocalDemo,
+  disconnectLocalDemo,
   exportAuditTimeline,
   getBrowserLocalStorage,
   getDemoSafetyFlags,
@@ -49,6 +50,10 @@ import {
   createClarificationPrompt,
   type ClarificationOption
 } from "./conversation";
+import {
+  buildConnectReadinessPanelModel,
+  type ConnectReadinessPanelModel
+} from "./connect-readiness";
 import {
   createRobinhoodFixtureExplorerModel,
   V01_SAFETY_CHECKLIST,
@@ -185,6 +190,16 @@ if (app) {
       activeTab,
       settings,
       connectionState,
+      connectReadinessPanel: buildConnectReadinessPanelModel({
+        connectionState,
+        storageAvailable: storage !== null,
+        voiceInputStatus: voiceState.status,
+        voiceInputMessage: voiceState.message,
+        voiceOutputStatus: voiceOutputState.status,
+        voiceOutputMessage: voiceOutputState.message,
+        robinhoodReadOnlyState: robinhoodMcpPanel.status.state,
+        safetyFlags: getDemoSafetyFlags()
+      }),
       persistedAuditTimeline,
       exportStatusMessage,
       receiptMarkdownPreview,
@@ -197,9 +212,30 @@ if (app) {
     bindEvents();
   };
 
+  const scrollToDashboardTab = (tab: DashboardTab): void => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const selectorByTab: Record<DashboardTab, string> = {
+      command: "#command-center",
+      workflow: "#mock-desk",
+      exports: "#mock-desk",
+      robinhood: "#robinhood-boundary",
+      settings: ".readiness-panel"
+    };
+
+    window.requestAnimationFrame(() => {
+      app
+        .querySelector<HTMLElement>(selectorByTab[tab])
+        ?.scrollIntoView({ block: "start" });
+    });
+  };
+
   const runCommand = async (
     command: string,
-    source: CommandSource = "keyboard"
+    source: CommandSource = "keyboard",
+    options: { readonly speakBack?: boolean } = {}
   ): Promise<void> => {
     if (!onboardingAccepted) {
       return;
@@ -221,7 +257,10 @@ if (app) {
     activeTab = currentState.ticket ? "workflow" : "command";
     busy = false;
     render();
-    voiceOutputController.speakForState(currentState);
+
+    if (options.speakBack ?? true) {
+      voiceOutputController.speakForState(currentState);
+    }
   };
 
   const submitConfirmation = async (
@@ -385,14 +424,24 @@ if (app) {
   };
 
   const connectLocalDemoInBrowser = (): void => {
-    if (connectionState.status === "connected") {
-      return;
+    if (connectionState.status !== "connected") {
+      connectionState = connectLocalDemo(storage);
+      exportStatusMessage =
+        "Local demo connection is active. Live trading remains unavailable.";
     }
 
-    connectionState = connectLocalDemo(storage);
-    exportStatusMessage =
-      "Local demo connection is active. Live trading remains unavailable.";
+    activeTab = "settings";
     render();
+    scrollToDashboardTab("settings");
+  };
+
+  const disconnectLocalDemoInBrowser = (): void => {
+    connectionState = disconnectLocalDemo(storage);
+    exportStatusMessage =
+      "Local demo connection was disconnected. Mock mode and live-trading blocks remain unchanged.";
+    activeTab = "settings";
+    render();
+    scrollToDashboardTab("settings");
   };
 
   const bindEvents = (): void => {
@@ -475,6 +524,12 @@ if (app) {
     const connectButton = app.querySelector<HTMLButtonElement>(
       "#local-connect-button"
     );
+    const readinessConnectButton = app.querySelector<HTMLButtonElement>(
+      "#readiness-connect-button"
+    );
+    const disconnectButton = app.querySelector<HTMLButtonElement>(
+      "#disconnect-local-demo-button"
+    );
 
     for (const button of tabButtons) {
       button.addEventListener("click", () => {
@@ -486,10 +541,16 @@ if (app) {
 
         activeTab = nextTab;
         render();
+        scrollToDashboardTab(nextTab);
       });
     }
 
     connectButton?.addEventListener("click", connectLocalDemoInBrowser);
+    readinessConnectButton?.addEventListener(
+      "click",
+      connectLocalDemoInBrowser
+    );
+    disconnectButton?.addEventListener("click", disconnectLocalDemoInBrowser);
 
     commandForm?.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -601,7 +662,7 @@ if (app) {
   render();
 
   if (onboardingAccepted) {
-    void runCommand("show my portfolio");
+    void runCommand("show my portfolio", "keyboard", { speakBack: false });
   }
 }
 
@@ -613,6 +674,7 @@ interface MarkupOptions {
   readonly activeTab: DashboardTab;
   readonly settings: DemoSettings;
   readonly connectionState: DemoConnectionState;
+  readonly connectReadinessPanel: ConnectReadinessPanelModel;
   readonly persistedAuditTimeline: readonly AuditEvent[];
   readonly exportStatusMessage: string;
   readonly receiptMarkdownPreview: string;
@@ -632,6 +694,7 @@ function createMarkup(options: MarkupOptions): string {
     activeTab,
     settings,
     connectionState,
+    connectReadinessPanel,
     persistedAuditTimeline,
     exportStatusMessage,
     receiptMarkdownPreview,
@@ -678,6 +741,7 @@ function createMarkup(options: MarkupOptions): string {
               class="connect-button ${connectionConnected ? "is-connected" : ""}"
               type="button"
               aria-pressed="${String(connectionConnected)}"
+              aria-label="${connectionConnected ? "Open local demo readiness" : "Connect local demo"}"
             >
               <span class="connect-dot" aria-hidden="true"></span>
               <span>${connectionConnected ? "Connected" : "Connect"}</span>
@@ -869,6 +933,7 @@ function createMarkup(options: MarkupOptions): string {
       </section>
 
       <div class="supporting-panels tab-panel ${settingsTabActive ? "is-active" : ""}" aria-label="demo settings and safety summary" ${settingsTabActive ? "" : "hidden"}>
+        ${renderConnectReadiness(connectReadinessPanel)}
         ${renderSettings(settings, storageAvailable)}
         ${renderExecutionReadinessPanel()}
         ${renderV01MockDemoStatus()}
@@ -1013,6 +1078,45 @@ function getWorkflowStepClass(
   }
 
   return "is-pending";
+}
+
+function renderConnectReadiness(model: ConnectReadinessPanelModel): string {
+  return `
+    <section class="readiness-panel status-panel" aria-label="connection readiness">
+      <div class="panel-heading">
+        <div>
+          <p class="section-label">Connection readiness</p>
+          <h2>${escapeHtml(model.headline)}</h2>
+        </div>
+        <span class="status-pill">${escapeHtml(model.status)}</span>
+      </div>
+      <p class="status-copy">${escapeHtml(model.summary)}</p>
+      ${
+        model.connectedAtLabel
+          ? `<p class="readiness-timestamp">Connected at ${escapeHtml(model.connectedAtLabel)}</p>`
+          : ""
+      }
+      <div class="readiness-actions">
+        <button id="readiness-connect-button" type="button" class="primary-button" ${model.status === "connected" ? "disabled" : ""}>${escapeHtml(model.primaryActionLabel)}</button>
+        <button id="disconnect-local-demo-button" type="button" class="secondary-button" ${model.disconnectAvailable ? "" : "disabled"}>${escapeHtml(model.disconnectActionLabel)}</button>
+      </div>
+      <dl class="readiness-grid">
+        ${model.items.map(renderReadinessItem).join("")}
+      </dl>
+    </section>
+  `;
+}
+
+function renderReadinessItem(
+  item: ConnectReadinessPanelModel["items"][number]
+): string {
+  return `
+    <div class="readiness-item readiness-item-${escapeHtml(item.state)}">
+      <dt>${escapeHtml(item.label)}</dt>
+      <dd>${escapeHtml(item.value)}</dd>
+      <small>${escapeHtml(item.detail)}</small>
+    </div>
+  `;
 }
 
 function renderSettings(
