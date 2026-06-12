@@ -5,7 +5,7 @@ import {
   type BrowserSpeechHost,
   type VoiceTranscript
 } from "@streetspeak-ai/voice";
-import type { CommandSource } from "@streetspeak-ai/core";
+import type { CommandSource, MockTradingDeskState } from "@streetspeak-ai/core";
 
 export type BrowserVoiceStatus =
   | "unsupported"
@@ -19,6 +19,19 @@ export interface BrowserVoiceState {
   readonly status: BrowserVoiceStatus;
   readonly message: string;
   readonly lastTranscript: string;
+}
+
+export type BrowserVoiceOutputStatus =
+  | "unsupported"
+  | "disabled"
+  | "ready"
+  | "speaking"
+  | "error";
+
+export interface BrowserVoiceOutputState {
+  readonly status: BrowserVoiceOutputStatus;
+  readonly message: string;
+  readonly lastSpokenText: string;
 }
 
 export interface BrowserVoiceCallbacks {
@@ -72,6 +85,33 @@ interface SpeechRecognitionWindow extends BrowserSpeechHost {
   readonly webkitSpeechRecognition?: SpeechRecognitionConstructor;
 }
 
+interface SpeechSynthesisErrorEventLike {
+  readonly error?: string;
+}
+
+interface SpeechSynthesisUtteranceLike {
+  text: string;
+  rate: number;
+  pitch: number;
+  onend: (() => void) | null;
+  onerror: ((event: SpeechSynthesisErrorEventLike) => void) | null;
+}
+
+type SpeechSynthesisUtteranceConstructor = new (
+  text: string
+) => SpeechSynthesisUtteranceLike;
+
+interface SpeechSynthesisLike {
+  readonly speaking?: boolean;
+  cancel(): void;
+  speak(utterance: SpeechSynthesisUtteranceLike): void;
+}
+
+export interface BrowserSpeechOutputHost extends BrowserSpeechHost {
+  readonly speechSynthesis?: SpeechSynthesisLike;
+  readonly SpeechSynthesisUtterance?: SpeechSynthesisUtteranceConstructor;
+}
+
 export function createInitialBrowserVoiceState(
   host: BrowserSpeechHost | null,
   enabled: boolean
@@ -113,6 +153,53 @@ export function getSpeechRecognitionConstructor(
   );
 }
 
+export function createInitialBrowserVoiceOutputState(
+  host: BrowserSpeechOutputHost | null,
+  enabled: boolean
+): BrowserVoiceOutputState {
+  if (!enabled) {
+    return {
+      status: "disabled",
+      message: "Browser voice output is disabled in local settings.",
+      lastSpokenText: ""
+    };
+  }
+
+  if (!getBrowserSpeechOutputAdapter(host)) {
+    return {
+      status: "unsupported",
+      message:
+        "Browser-native voice output is not supported here. Text responses still work.",
+      lastSpokenText: ""
+    };
+  }
+
+  return {
+    status: "ready",
+    message:
+      "Browser-native voice output is ready. Speak-back uses short safe mock summaries only.",
+    lastSpokenText: ""
+  };
+}
+
+function getBrowserSpeechOutputAdapter(host: BrowserSpeechOutputHost | null): {
+  readonly synthesis: SpeechSynthesisLike;
+  readonly Utterance: SpeechSynthesisUtteranceConstructor;
+} | null {
+  const outputHost = host;
+  const synthesis = outputHost?.speechSynthesis;
+  const Utterance = outputHost?.SpeechSynthesisUtterance;
+
+  if (!synthesis || typeof Utterance !== "function") {
+    return null;
+  }
+
+  return {
+    synthesis,
+    Utterance
+  };
+}
+
 export function extractSpeechTranscript(
   event: SpeechRecognitionResultEventLike
 ): VoiceTranscript {
@@ -133,6 +220,40 @@ export function extractSpeechTranscript(
   return createBrowserSpeechTranscript(transcripts.join(" "), {
     confidence: confidence || undefined
   });
+}
+
+export function buildSafeSpeakBackText(
+  state: MockTradingDeskState | null
+): string {
+  if (!state) {
+    return "StreetSpeak AI is ready. Mock mode is active and live trading is unavailable.";
+  }
+
+  if (state.status === "mock_submitted" && state.ticket) {
+    return `Mock submission recorded for ${state.ticket.side} ${state.ticket.quantity} ${state.ticket.symbol}. No live broker order was placed.`;
+  }
+
+  if (state.status === "confirmation_rejected") {
+    return "Confirmation rejected. Generic confirmations never submit. Use the exact mock confirmation phrase and code.";
+  }
+
+  if (state.ticket && state.challenge) {
+    return `Mock ${state.ticket.side} ticket for ${state.ticket.quantity} ${state.ticket.symbol} is ready. Review safety, then type the exact confirmation phrase and code. No live order can be placed.`;
+  }
+
+  if (state.parse.kind === "portfolio_question") {
+    return "Mock portfolio answer is ready. Review the local fixture data on screen. No live broker data was used.";
+  }
+
+  if (state.parse.kind === "quote_question") {
+    return `Mock quote answer for ${state.parse.symbol} is ready. Review the static fixture quote on screen. No live market data was used.`;
+  }
+
+  if (state.status === "unsupported" || state.status === "invalid") {
+    return "StreetSpeak AI could not create a mock ticket from that command. Typed commands still work, and live trading remains unavailable.";
+  }
+
+  return "StreetSpeak AI updated the mock trading desk. Review the on-screen details before taking any next step.";
 }
 
 export class BrowserVoiceController {
@@ -232,6 +353,97 @@ export class BrowserVoiceController {
   }
 
   #emit(state: BrowserVoiceState): void {
+    this.#state = state;
+    this.callbacks.onStateChange(state);
+  }
+}
+
+export class BrowserVoiceOutputController {
+  #state: BrowserVoiceOutputState;
+
+  constructor(
+    private readonly host: BrowserSpeechOutputHost | null,
+    private readonly callbacks: {
+      onStateChange(state: BrowserVoiceOutputState): void;
+    },
+    enabled: boolean
+  ) {
+    this.#state = createInitialBrowserVoiceOutputState(host, enabled);
+  }
+
+  get state(): BrowserVoiceOutputState {
+    return this.#state;
+  }
+
+  speak(text: string): void {
+    if (this.#state.status === "disabled") {
+      this.#emit({
+        ...this.#state,
+        message: "Enable browser voice output in local settings first."
+      });
+      return;
+    }
+
+    const adapter = getBrowserSpeechOutputAdapter(this.host);
+
+    if (!adapter) {
+      this.#emit(createInitialBrowserVoiceOutputState(this.host, true));
+      return;
+    }
+
+    const safeText = text.trim();
+
+    if (!safeText) {
+      return;
+    }
+
+    if (adapter.synthesis.speaking) {
+      adapter.synthesis.cancel();
+    }
+
+    const utterance = new adapter.Utterance(safeText);
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    utterance.onend = () => {
+      this.#emit({
+        status: "ready",
+        message: "Browser voice output is ready.",
+        lastSpokenText: safeText
+      });
+    };
+    utterance.onerror = (event) => {
+      this.#emit({
+        status: "error",
+        message: `Browser voice output error: ${event.error ?? "unknown error"}. Text responses still work.`,
+        lastSpokenText: safeText
+      });
+    };
+
+    this.#emit({
+      status: "speaking",
+      message: "Speaking a safe mock-only summary.",
+      lastSpokenText: safeText
+    });
+    adapter.synthesis.speak(utterance);
+  }
+
+  speakForState(state: MockTradingDeskState | null): void {
+    this.speak(buildSafeSpeakBackText(state));
+  }
+
+  stop(): void {
+    const adapter = getBrowserSpeechOutputAdapter(this.host);
+    adapter?.synthesis.cancel();
+    this.#emit(createInitialBrowserVoiceOutputState(this.host, true));
+  }
+
+  setEnabled(enabled: boolean): void {
+    const adapter = getBrowserSpeechOutputAdapter(this.host);
+    adapter?.synthesis.cancel();
+    this.#emit(createInitialBrowserVoiceOutputState(this.host, enabled));
+  }
+
+  #emit(state: BrowserVoiceOutputState): void {
     this.#state = state;
     this.callbacks.onStateChange(state);
   }
